@@ -1,0 +1,173 @@
+use crate::common::{cmd_passthrough, escape_field, path_meta, strip_dot_slash, Config};
+use crate::gate::{classify_line, truncated_marker, LineKind};
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+#[derive(Debug, Clone)]
+struct SedRangeSpec {
+    start: u64,
+    end: u64,
+    file: PathBuf,
+}
+
+fn parse_sed_range_spec(args: &[OsString]) -> Option<SedRangeSpec> {
+    // Supported shapes (after shell parsing):
+    // - sed -n 'A,Bp' FILE
+    // - sed -n -e 'A,Bp' FILE
+    // - sed -n -eA,Bp FILE
+    let mut quiet = false;
+    let mut script: Option<String> = None;
+    let mut files: Vec<OsString> = Vec::new();
+
+    let mut i = 0usize;
+    while i < args.len() {
+        let a = &args[i];
+        let s = a.to_string_lossy();
+
+        if s == "-n" {
+            quiet = true;
+        } else if s == "-e" {
+            i += 1;
+            if i >= args.len() {
+                return None;
+            }
+            if script.is_some() {
+                return None;
+            }
+            script = Some(args[i].to_string_lossy().to_string());
+        } else if s.starts_with("-e") && s.len() > 2 {
+            if script.is_some() {
+                return None;
+            }
+            script = Some(s[2..].to_string());
+        } else if s.starts_with('-') {
+            return None;
+        } else if script.is_none() {
+            script = Some(s.to_string());
+        } else {
+            files.push(a.clone());
+        }
+
+        i += 1;
+    }
+
+    if !quiet {
+        return None;
+    }
+    let script = script?;
+    if files.len() != 1 {
+        return None;
+    }
+    if files[0] == "-" {
+        return None;
+    }
+
+    let s = script.trim();
+    if !s.ends_with('p') {
+        return None;
+    }
+    let core = &s[..s.len() - 1];
+    let (a, b) = core.split_once(',')?;
+    let start = a.trim().parse::<u64>().ok()?;
+    let end = b.trim().parse::<u64>().ok()?;
+    if start == 0 || end == 0 || end < start {
+        return None;
+    }
+
+    Some(SedRangeSpec {
+        start,
+        end,
+        file: PathBuf::from(files.remove(0)),
+    })
+}
+
+pub fn run(args: &[OsString]) -> ExitCode {
+    let cfg = Config::from_env();
+    let tool: &OsStr = OsStr::new("sed");
+
+    let Some(spec) = parse_sed_range_spec(args) else {
+        return cmd_passthrough(tool, args);
+    };
+
+    let f = match File::open(&spec.file) {
+        Ok(f) => f,
+        Err(_) => return cmd_passthrough(tool, args),
+    };
+
+    let mut out = std::io::stdout().lock();
+    let mut r = BufReader::new(f);
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut lineno: u64 = 0;
+    let mut truncated: u64 = 0;
+
+    while {
+        buf.clear();
+        let n = r.read_until(b'\n', &mut buf).unwrap_or(0);
+        n != 0
+    } {
+        lineno += 1;
+
+        if lineno < spec.start {
+            continue;
+        }
+        if lineno > spec.end {
+            break;
+        }
+
+        let (gate, kind) = crate::gate::should_gate_line(&buf, &cfg);
+        let kind = if matches!(classify_line(&buf, &cfg), LineKind::Binary) {
+            LineKind::Binary
+        } else {
+            kind
+        };
+
+        if gate || kind == LineKind::Binary {
+            truncated += 1;
+            let marker = truncated_marker(&format!("sed-x truncated line={}", lineno), &buf, kind, &cfg);
+            let _ = out.write_all(marker.as_bytes());
+            let _ = out.write_all(b"\n");
+        } else {
+            let _ = out.write_all(&buf);
+        }
+    }
+
+    let meta = path_meta(&spec.file);
+    let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
+    let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+
+    let path_s = strip_dot_slash(&spec.file.to_string_lossy()).to_string();
+    println!(
+        "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
+        escape_field(&path_s),
+        meta.kind.as_str(),
+        bytes,
+        lines,
+        spec.start,
+        spec.end,
+        truncated
+    );
+
+    ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_basic_range_spec() {
+        let args = vec![
+            OsString::from("-n"),
+            OsString::from("10,20p"),
+            OsString::from("file.txt"),
+        ];
+        let spec = parse_sed_range_spec(&args).unwrap();
+        assert_eq!(spec.start, 10);
+        assert_eq!(spec.end, 20);
+        assert_eq!(spec.file, PathBuf::from("file.txt"));
+    }
+}
