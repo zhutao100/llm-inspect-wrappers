@@ -21,3 +21,9 @@ Each implementation provides the same wrapper names:
 
 - Per-implementation tests live under each subdirectory.
 - Root `tests/` cross-validates the three implementations against the same fixtures.
+
+Run cross-validation:
+
+```bash
+python3 -m unittest discover -s tests -q
+```
