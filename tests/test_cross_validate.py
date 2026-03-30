@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+BASH = "/bin/bash" if Path("/bin/bash").exists() else "bash"
 
 
 def have_tools(*names: str) -> bool:
@@ -109,7 +110,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
         subprocess.run([cargo, "build", "-q"], cwd=str(REPO_ROOT / "rust"), check=True)
 
         cls.impls = [
-            Impl("bash", ["bash", str(REPO_ROOT / "bash" / "xwrap")]),
+            Impl("bash", [BASH, str(REPO_ROOT / "bash" / "xwrap")]),
             Impl("python", [sys.executable, str(REPO_ROOT / "python" / "llm_inspect.py")]),
             Impl("rust", [str(REPO_ROOT / "rust" / "target" / "debug" / "llm-inspect-wrappers")]),
         ]
@@ -184,6 +185,35 @@ class TestCrossValidateImplementations(unittest.TestCase):
 
                 self.assertEqual(lm.line, 1)
                 self.assertIn("rg-x truncated", lm.body)
+
+    def test_rg_x_filelist_mode_consistent(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "dir").mkdir()
+            (root / "a.txt").write_text("needle\n", encoding="utf-8")
+            (root / "b.txt").write_text("nope\n", encoding="utf-8")
+            (root / "dir" / "c.txt").write_text("needle here\n", encoding="utf-8")
+
+            expected = {"a.txt", "dir/c.txt"}
+            for impl in self.impls:
+                cp = impl.run("rg-x", "-l", "needle", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "filelist")
+                self.assertTrue(expected.issubset(rows.keys()))
+
+            for rel in expected:
+                st = os.stat(root / rel)
+                expected_bytes = st.st_size
+                expected_lines = (root / rel).read_text(encoding="utf-8").count("\n")
+                for impl in self.impls:
+                    cp = impl.run("rg-x", "-l", "needle", cwd=root)
+                    rows, _ = parse_file_table(cp.stdout)
+                    row = rows[rel]
+                    self.assertEqual(row["kind"], "file")
+                    self.assertEqual(int(row["bytes"]), expected_bytes)
+                    self.assertEqual(int(row["lines"]), expected_lines)
 
     def test_sed_x_range_read_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "bash" / "xwrap"
+BASH = "/bin/bash" if Path("/bin/bash").exists() else "bash"
 
 
 def have_tools(*names: str) -> bool:
@@ -18,7 +19,7 @@ def have_tools(*names: str) -> bool:
 
 def run_xwrap(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     cp = subprocess.run(
-        ["bash", str(SCRIPT), *args],
+        [BASH, str(SCRIPT), *args],
         cwd=str(cwd),
         text=True,
         stdout=subprocess.PIPE,
