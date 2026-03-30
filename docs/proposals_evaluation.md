@@ -55,6 +55,9 @@ You effectively have three distinct implementation directions:
 
   * The proposal text emphasizes `fd -0`/NUL-splitting as critical; the shipped `xwrap.sh` **does not** actually force `-0` nor parse NUL-delimited output.
   * It captures `fd` output into a shell variable and splits by newline, which is inherently not filename-safe.
+* **Doc/implementation mismatch on macOS-default Bash compatibility:**
+
+  * The proposal text claims a “bash 3.2+” compatible subset, but the shipped `xwrap.sh` uses features that require newer Bash (for example `local -A ...` associative arrays).
 * **stdout/stderr conflation**:
 
   * `fd` and `rg` are executed with `2>&1` captured into `output=...`, so stderr is merged into stdout. In non-error cases, warnings/noise can be mis-parsed as paths or match lines.
@@ -114,6 +117,9 @@ You effectively have three distinct implementation directions:
 * **Doc/AGENTS mismatch with the shipped code**:
 
   * The proposal text and `AGENTS_addon.md` mention features like `fd-x --overview[=DEPTH]` (dir rollups / extension histograms), but the Rust binary as provided does **not** implement `--overview`.
+* **Drop-in flag conflicts in `fd-x` (wrapper flag vs underlying tool flag):**
+
+  * The shipped Rust `fd-x` adds wrapper flags like `--format` (tsv/jsonl), which collides with `fd`’s own `--format` flag unless users remember to separate forwarded args with `--` (reducing “drop-in replacement” ergonomics).
 * **`rg-x` file-list mode parsing is newline-based**:
 
   * It does not currently force `rg -0/--null` for file-list modes, so it is not filename-safe in that specific mode (rare, but it’s exactly the class of issue the task calls out for “filename-stream parsing” concerns).
