@@ -428,11 +428,13 @@ def rg_is_filelist_mode(args: list[str]) -> bool:
     return False
 
 
-def render_rg_match_line(line_no: int | None, line_text: str) -> str:
+def render_rg_match_line(line_no: int | None, col_no: int | None, line_text: str) -> str:
     raw = line_text.encode("utf-8", "replace")
     gate, kind, hint = should_gate_line(raw)
     body = truncated_marker("rg-x truncated", raw, kind, hint) if gate else safe_preview_text(line_text.rstrip("\n"))
-    prefix = f"{line_no}:" if line_no is not None else "?:"
+    ln = str(line_no) if line_no is not None else "?"
+    col = str(col_no) if col_no is not None else "?"
+    prefix = f"{ln}:{col}:"
     return prefix + body
 
 
@@ -479,11 +481,16 @@ def main_rg_json(args: list[str]) -> int:
             line_no = data.get("line_number")
             submatches = data.get("submatches", [])
             hit_incr = max(1, len(submatches))
+            col_no = 1
+            if submatches and isinstance(submatches[0], dict):
+                start = submatches[0].get("start")
+                if isinstance(start, int):
+                    col_no = start + 1
 
             grp = groups_by_path.setdefault(path, RgFileGroup(path=path))
             grp.hits += hit_incr
             if len(grp.shown_lines) < CFG.max_rg_match_lines_per_file:
-                grp.shown_lines.append(render_rg_match_line(line_no, line_text))
+                grp.shown_lines.append(render_rg_match_line(line_no, col_no, line_text))
             else:
                 grp.omitted_lines += 1
 
