@@ -33,14 +33,19 @@ fn rg_should_passthrough(args: &[OsString]) -> bool {
         let s = a.to_string_lossy();
         match s.as_ref() {
             "--json" | "--passthru" | "--vimgrep" | "--null" | "-0" | "-c" | "--count" | "--count-matches" | "-o"
-            | "--only-matching" | "-r" | "--replace" => return true,
+            | "--only-matching" | "-r" | "--replace" | "-A" | "-B" | "-C" | "--after-context" | "--before-context"
+            | "--context" => return true,
             _ => {}
         }
-        if s.starts_with("--replace=") {
+        if s.starts_with("--replace=")
+            || s.starts_with("--after-context=")
+            || s.starts_with("--before-context=")
+            || s.starts_with("--context=")
+        {
             return true;
         }
         if s.starts_with('-') && !s.starts_with("--") {
-            if s.contains('0') || s.contains('c') || s.contains('o') {
+            if s.contains('0') || s.contains('c') || s.contains('o') || s.contains('A') || s.contains('B') || s.contains('C') {
                 return true;
             }
         }

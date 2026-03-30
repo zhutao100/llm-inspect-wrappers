@@ -25,7 +25,9 @@ fn fd_x_supported(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "-0" | "--print0" | "-x" | "-X" | "--exec" | "--exec-batch" | "--format" => return false,
+            "-0" | "--print0" | "-l" | "--list-details" | "-x" | "-X" | "--exec" | "--exec-batch" | "--format" => {
+                return false;
+            }
             _ => {}
         }
         if s.starts_with("--format=") || s.starts_with("--exec=") || s.starts_with("--exec-batch=") {
