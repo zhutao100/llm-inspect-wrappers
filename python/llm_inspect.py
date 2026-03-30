@@ -228,10 +228,13 @@ def collect_meta(paths: list[str]) -> dict[str, FileMeta]:
     return metas
 
 
-def render_file_table(tool: str, paths: list[str], metas: dict[str, FileMeta], max_rows: int) -> str:
+def render_file_table(tool: str, paths: list[str], max_rows: int, mode: str | None = None) -> str:
     total = len(paths)
     shown = sorted(paths)[:max_rows]
     omitted = total - len(shown)
+
+    # Only collect metadata for rows we will print (line counts can be expensive on large repos).
+    metas = collect_meta(shown)
 
     out: list[str] = []
     for p in shown:
@@ -240,7 +243,13 @@ def render_file_table(tool: str, paths: list[str], metas: dict[str, FileMeta], m
         l = str(meta.lines) if meta.lines is not None else "-"
         out.append(f"{escape_field(p)}\tkind={meta.kind}\tbytes={b}\tlines={l}")
 
-    out.append(f"@meta\ttool={tool}\ttotal={total}\tprinted={len(shown)}\tomitted={omitted}")
+    meta_fields = [f"@meta\ttool={tool}"]
+    if mode is not None:
+        meta_fields.append(f"mode={mode}")
+    meta_fields.append(f"total={total}")
+    meta_fields.append(f"printed={len(shown)}")
+    meta_fields.append(f"omitted={omitted}")
+    out.append("\t".join(meta_fields))
     return "\n".join(out) + "\n"
 
 
@@ -256,12 +265,52 @@ def safe_preview_bytes(raw: bytes, max_chars: int) -> str:
     return safe_preview_text(s)
 
 
+def classify_large_line(raw: bytes) -> tuple[str, str]:
+    head = raw[:4096]
+
+    if b"\x00" in head:
+        return ("binary", "")
+
+    # Treat any early UTF-8 failures as binary; we only use this classification for gated output.
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        return ("binary", "")
+
+    i = 0
+    while i < len(head) and head[i] in b" \t\r\n\v\f":
+        i += 1
+
+    first = head[i : i + 1]
+    if first in (b"{", b"[") and len(raw) >= CFG.soft_line_chars:
+        keys: list[str] = []
+        head_txt = head.decode("utf-8", "replace")
+        for m in JSON_KEY_RE.finditer(head_txt):
+            k = m.group(1)
+            if k not in keys:
+                keys.append(k)
+            if len(keys) >= 6:
+                break
+        hint = f"keys={','.join(keys)}" if keys else ""
+        return ("json", hint)
+
+    if len(raw) >= CFG.soft_line_chars:
+        head_trimmed = head[i:]
+        if b" " not in head_trimmed and BASE64ISH_RE.fullmatch(head_trimmed):
+            return ("base64", "")
+
+    return ("plain", "")
+
+
 def classify_line(raw: bytes) -> tuple[str, str]:
     """
     Returns (kind, hint_suffix_without_leading_space).
     kind:
       plain | long | json | base64 | minified | binary
     """
+    if len(raw) > CFG.hard_line_chars:
+        return classify_large_line(raw)
+
     try:
         txt = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -332,6 +381,8 @@ def rg_decode_obj_text(obj: dict) -> str:
 FD_UNSUPPORTED_EXACT = {
     "-0",
     "--print0",
+    "-l",
+    "--list-details",
     "-x",
     "-X",
     "--exec",
@@ -366,8 +417,7 @@ def main_fd(args: list[str]) -> int:
 
     try:
         paths = parse_nul_paths(cp.stdout)
-        metas = collect_meta(paths)
-        out = render_file_table("fd-x", paths, metas, max_rows=CFG.max_fd_rows)
+        out = render_file_table("fd-x", paths, max_rows=CFG.max_fd_rows)
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
         return int(cp.returncode)
@@ -385,6 +435,9 @@ RG_PASSTHROUGH_EXACT = {
     "--vimgrep",
     "--null",
     "-0",
+    "-A",
+    "-B",
+    "-C",
     "-c",
     "--count",
     "--count-matches",
@@ -392,8 +445,11 @@ RG_PASSTHROUGH_EXACT = {
     "--only-matching",
     "-r",
     "--replace",
+    "--after-context",
+    "--before-context",
+    "--context",
 }
-RG_PASSTHROUGH_PREFIX = ("--replace=",)
+RG_PASSTHROUGH_PREFIX = ("--replace=", "--after-context=", "--before-context=", "--context=")
 
 RG_FILELIST_EXACT = {
     "--files",
@@ -414,7 +470,7 @@ def rg_should_passthrough(args: list[str]) -> bool:
             return True
         if any(a.startswith(p) for p in RG_PASSTHROUGH_PREFIX):
             return True
-        if short_flag_bundle_contains(a, {"0", "c", "o"}):
+        if short_flag_bundle_contains(a, {"0", "c", "o", "A", "B", "C"}):
             return True
     return False
 
@@ -446,8 +502,7 @@ def main_rg_filelist(args: list[str]) -> int:
 
     try:
         paths = parse_nul_paths(cp.stdout)
-        metas = collect_meta(paths)
-        out = render_file_table("rg-x", paths, metas, max_rows=CFG.max_fd_rows)
+        out = render_file_table("rg-x", paths, max_rows=CFG.max_fd_rows, mode="filelist")
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
         return int(cp.returncode)
