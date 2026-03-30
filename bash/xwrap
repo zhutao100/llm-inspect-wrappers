@@ -13,7 +13,8 @@
 #   ./xwrap sed-x ...
 
 set -o pipefail
-shopt -s lastpipe 2>/dev/null || true
+
+export LC_ALL=C LANG=C
 
 MAX_FD_ROWS="${LLM_X_MAX_FD_ROWS:-200}"
 MAX_RG_FILES="${LLM_X_MAX_RG_FILES:-80}"
@@ -32,6 +33,35 @@ escape_field() {
   s="${s//$'\n'/\\n}"
   s="${s//$'\r'/\\r}"
   printf '%s' "$s"
+}
+
+run_to_fifo() {
+  RUN_FIFO=""
+  RUN_PID=""
+  RUN_TMPDIR=""
+
+  local tmpdir fifo pid
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/xwrap.XXXXXX")" || return 2
+  fifo="$tmpdir/out"
+  if ! mkfifo "$fifo"; then
+    rm -rf "$tmpdir"
+    return 2
+  fi
+
+  # Avoid FIFO open deadlocks: opening a FIFO for writing blocks until a reader exists.
+  # Open a temporary RDWR fd so the writer redirection can succeed, then close it.
+  if ! exec 9<>"$fifo"; then
+    rm -rf "$tmpdir"
+    return 2
+  fi
+  "$@" >"$fifo" &
+  pid=$!
+  exec 9>&-
+
+  RUN_FIFO="$fifo"
+  RUN_PID="$pid"
+  RUN_TMPDIR="$tmpdir"
+  return 0
 }
 
 
@@ -75,18 +105,13 @@ classify_line_kind() {
   local line="${1-}"
   local len=${#line}
 
-  if (( len > HARD_LINE_CHARS )); then
-    printf 'long'
-    return 0
-  fi
-
   if (( len <= SOFT_LINE_CHARS )); then
     printf 'plain'
     return 0
   fi
 
   # JSON-ish
-  if [[ "$line" =~ ^[[:space:]]*[\{\[] ]] && [[ "$line" =~ [\}\]][[:space:]]*$ ]]; then
+  if [[ "$line" =~ ^[[:space:]]*[\{\[] ]]; then
     printf 'json'
     return 0
   fi
@@ -94,6 +119,11 @@ classify_line_kind() {
   # base64-ish (no spaces, only base64 chars; cheap heuristic)
   if [[ "$line" != *" "* ]] && [[ "$line" =~ ^[A-Za-z0-9+/=_-]+$ ]]; then
     printf 'base64'
+    return 0
+  fi
+
+  if (( len > HARD_LINE_CHARS )); then
+    printf 'long'
     return 0
   fi
 
@@ -140,7 +170,7 @@ render_maybe_gated_line() {
 fd_x_supported() {
   for a in "$@"; do
     case "$a" in
-      -0|--print0|-x|-X|--exec|--exec-batch|--format|--format=*|--exec=*|--exec-batch=*)
+      -0|--print0|-l|--list-details|-x|-X|--exec|--exec-batch|--format|--format=*|--exec=*|--exec-batch=*)
         return 1
         ;;
     esac
@@ -157,17 +187,36 @@ fd_x() {
   local total=0
   local printed=0
 
-  LC_ALL=C LANG=C fd "$@" -0 | while IFS= read -r -d '' p; do
+  local -a out_rows=()
+  local fifo pid tmpdir
+  if ! run_to_fifo fd "$@" -0; then
+    exec fd "$@"
+  fi
+  fifo="$RUN_FIFO"
+  pid="$RUN_PID"
+  tmpdir="$RUN_TMPDIR"
+
+  while IFS= read -r -d '' p; do
     p="${p#./}"
     total=$((total + 1))
 
     if (( printed < MAX_FD_ROWS )); then
       printed=$((printed + 1))
-      file_meta_row "$p"
+      out_rows+=("$(file_meta_row "$p")")
     fi
-  done
+  done <"$fifo"
 
-  local rc=${PIPESTATUS[0]}
+  wait "$pid"
+  local rc=$?
+  rm -rf "$tmpdir"
+
+  if (( rc != 0 )); then
+    exec fd "$@"
+  fi
+
+  if (( ${#out_rows[@]} > 0 )); then
+    printf '%s\n' "${out_rows[@]}"
+  fi
   local omitted=$((total - printed))
   printf '@meta\ttool=fd-x\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
   return "$rc"
@@ -177,10 +226,15 @@ fd_x() {
 rg_should_passthrough() {
   for a in "$@"; do
     case "$a" in
-      --json|--passthru|--vimgrep|--null|-0|-c|--count|--count-matches|-o|--only-matching|-r|--replace|--replace=*)
+      --json|--passthru|--vimgrep|--null|-0|-c|--count|--count-matches|-o|--only-matching|-r|--replace|--replace=*|\
+      -A|-B|-C|--after-context|--before-context|--context|--after-context=*|--before-context=*|--context=*|\
+      --heading|--no-heading|--no-line-number|--no-column|--with-filename|--no-filename|-H|-h)
         return 0
         ;;
       -*) # conservative: avoid parsing context/replace/count/only-matching bundles
+        if [[ "$a" == -A* ]] || [[ "$a" == -B* ]] || [[ "$a" == -C* ]]; then
+          return 0
+        fi
         if [[ "$a" == *"0"* ]] || [[ "$a" == *"c"* ]] || [[ "$a" == *"o"* ]]; then
           return 0
         fi
@@ -212,17 +266,36 @@ rg_x_filelist() {
   local total=0
   local printed=0
 
-  LC_ALL=C LANG=C rg "$@" -0 | while IFS= read -r -d '' p; do
+  local -a out_rows=()
+  local fifo pid tmpdir
+  if ! run_to_fifo rg "$@" -0; then
+    exec rg "$@"
+  fi
+  fifo="$RUN_FIFO"
+  pid="$RUN_PID"
+  tmpdir="$RUN_TMPDIR"
+
+  while IFS= read -r -d '' p; do
     p="${p#./}"
     total=$((total + 1))
 
     if (( printed < MAX_FD_ROWS )); then
       printed=$((printed + 1))
-      file_meta_row "$p"
+      out_rows+=("$(file_meta_row "$p")")
     fi
-  done
+  done <"$fifo"
 
-  local rc=${PIPESTATUS[0]}
+  wait "$pid"
+  local rc=$?
+  rm -rf "$tmpdir"
+
+  if (( rc == 2 )); then
+    exec rg "$@"
+  fi
+
+  if (( ${#out_rows[@]} > 0 )); then
+    printf '%s\n' "${out_rows[@]}"
+  fi
   local omitted=$((total - printed))
   printf '@meta\ttool=rg-x\tmode=filelist\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
   return "$rc"
@@ -243,6 +316,7 @@ rg_x_match() {
   local current_bytes="-"
   local current_lines="-"
   local -a current_lines_out=()
+  local -a out_lines=()
 
   flush_current() {
     if [[ -z "$current_path" ]]; then
@@ -255,18 +329,21 @@ rg_x_match() {
     if (( files_printed < MAX_RG_FILES )); then
       files_printed=$((files_printed + 1))
 
-      printf '@file\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\thits=%s\tshown=%s\tomitted=%s\n' \
-        "$(escape_field "$current_path")" \
-        "$current_kind" \
-        "$current_bytes" \
-        "$current_lines" \
-        "$current_hits" \
-        "${#current_lines_out[@]}" \
-        "$current_omitted"
-
+      out_lines+=(
+        "$(
+          printf '@file\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\thits=%s\tshown=%s\tomitted=%s' \
+            "$(escape_field "$current_path")" \
+            "$current_kind" \
+            "$current_bytes" \
+            "$current_lines" \
+            "$current_hits" \
+            "${#current_lines_out[@]}" \
+            "$current_omitted"
+        )"
+      )
       local ln
       for ln in "${current_lines_out[@]}"; do
-        printf '%s\n' "$ln"
+        out_lines+=("$ln")
       done
 
       match_lines_printed=$((match_lines_printed + ${#current_lines_out[@]}))
@@ -306,9 +383,18 @@ rg_x_match() {
     fi
   }
 
-  LC_ALL=C LANG=C rg --color=never --null --no-heading --line-number --column "$@" | while IFS= read -r -d '' p; do
+  local fifo pid tmpdir
+  if ! run_to_fifo rg --color=never --null --no-heading --line-number --column "$@"; then
+    exec rg "$@"
+  fi
+  fifo="$RUN_FIFO"
+  pid="$RUN_PID"
+  tmpdir="$RUN_TMPDIR"
+
+  exec 3<"$fifo"
+  while IFS= read -r -d '' p <&3; do
     local rest
-    if ! IFS= read -r rest; then
+    if ! IFS= read -r rest <&3; then
       rest=""
     fi
 
@@ -333,9 +419,21 @@ rg_x_match() {
       current_omitted=$((current_omitted + 1))
     fi
   done
+  exec 3<&-
 
-  local rc=${PIPESTATUS[0]}
+  wait "$pid"
+  local rc=$?
+  rm -rf "$tmpdir"
+
+  if (( rc == 2 )); then
+    exec rg "$@"
+  fi
+
   flush_current
+
+  if (( ${#out_lines[@]} > 0 )); then
+    printf '%s\n' "${out_lines[@]}"
+  fi
 
   printf '@meta\ttool=rg-x\tmode=match\tfiles=%s\tprinted_files=%s\tomitted_files=%s\tmatch_lines=%s\tprinted_match_lines=%s\tomitted_match_lines=%s\n' \
     "$files_seen" \
@@ -440,22 +538,46 @@ sed_x() {
     kind="other"
   fi
 
+  if [[ "$kind" != "file" ]]; then
+    exec sed "$@"
+  fi
+
   local truncated=0
   local line_no="$start"
+  local -a out_lines=()
 
-  sed "$@" | while IFS= read -r line; do
+  local fifo pid tmpdir
+  if ! run_to_fifo sed "$@"; then
+    exec sed "$@"
+  fi
+  fifo="$RUN_FIFO"
+  pid="$RUN_PID"
+  tmpdir="$RUN_TMPDIR"
+
+  while IFS= read -r line; do
     local kind_line
     kind_line="$(classify_line_kind "$line")"
     if [[ "$kind_line" == "plain" ]]; then
-      printf '%s\n' "$line"
+      out_lines+=("$line")
     else
       truncated=$((truncated + 1))
-      printf '%s\n' "$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")"
+      out_lines+=("$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")")
     fi
     line_no=$((line_no + 1))
-  done
+  done <"$fifo"
 
-  local rc=${PIPESTATUS[0]}
+  wait "$pid"
+  local rc=$?
+  rm -rf "$tmpdir"
+
+  if (( rc != 0 )); then
+    exec sed "$@"
+  fi
+
+  if (( ${#out_lines[@]} > 0 )); then
+    printf '%s\n' "${out_lines[@]}"
+  fi
+
   printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
     "$(escape_field "$file")" \
     "$kind" \
