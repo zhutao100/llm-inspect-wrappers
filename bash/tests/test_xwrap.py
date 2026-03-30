@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "bash" / "xwrap"
+
+
+def have_tools(*names: str) -> bool:
+    return all(shutil.which(n) for n in names)
+
+
+def run_xwrap(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    cp = subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        cwd=str(cwd),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return cp
+
+
+def parse_kv_fields(fields: list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for f in fields:
+        if "=" not in f:
+            continue
+        k, v = f.split("=", 1)
+        out[k] = v
+    return out
+
+
+class TestXwrapBash(unittest.TestCase):
+    @unittest.skipUnless(have_tools("fd", "rg"), "requires fd + rg on PATH")
+    def test_fd_x_emits_file_table(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "dir").mkdir()
+            (root / "a.txt").write_text("a\nb\nc\n", encoding="utf-8")
+            (root / "dir" / "b.txt").write_text("hello\n", encoding="utf-8")
+
+            cp = run_xwrap("fd-x", "-tf", cwd=root)
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+
+            lines = [ln for ln in cp.stdout.splitlines() if ln.strip()]
+            self.assertTrue(any(ln.startswith("@meta\ttool=fd-x\t") for ln in lines))
+
+            rows = [ln for ln in lines if not ln.startswith("@meta\t")]
+            by_path: dict[str, dict[str, str]] = {}
+            for row in rows:
+                cols = row.split("\t")
+                by_path[cols[0]] = parse_kv_fields(cols[1:])
+
+            for rel in ("a.txt", "dir/b.txt"):
+                self.assertIn(rel, by_path)
+                meta = by_path[rel]
+                self.assertEqual(meta["kind"], "file")
+                st = os.stat(root / rel)
+                self.assertEqual(int(meta["bytes"]), st.st_size)
+                self.assertEqual(int(meta["lines"]), (root / rel).read_text(encoding="utf-8").count("\n"))
+
+    @unittest.skipUnless(have_tools("rg"), "requires rg on PATH")
+    def test_rg_x_groups_and_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "short.txt").write_text("needle here\n", encoding="utf-8")
+
+            long_line = '{"k":"' + ("x" * 3000) + '","needle":"y"}\n'
+            (root / "long.json").write_text(long_line, encoding="utf-8")
+
+            cp = run_xwrap("rg-x", "needle", cwd=root)
+            self.assertIn(cp.returncode, (0, 1), cp.stderr)
+
+            lines = [ln for ln in cp.stdout.splitlines() if ln.strip()]
+            file_headers = [ln for ln in lines if ln.startswith("@file\t")]
+            self.assertEqual({h.split("\t")[1] for h in file_headers}, {"path=long.json", "path=short.txt"})
+
+            long_match = next((ln for ln in lines if ln.startswith("1:") and "rg-x truncated" in ln), None)
+            self.assertIsNotNone(long_match)
+
+            short_match = next((ln for ln in lines if ln.startswith("1:") and "needle here" in ln), None)
+            self.assertIsNotNone(short_match)
+
+            self.assertTrue(any(ln.startswith("@meta\ttool=rg-x\tmode=match\t") for ln in lines))
+
+    def test_sed_x_range_gates_long_line(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "big.txt").write_text(("x" * 3000) + "\n", encoding="utf-8")
+
+            cp = run_xwrap("sed-x", "-n", "1,1p", "big.txt", cwd=root)
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+
+            self.assertIn("sed-x truncated line=1", cp.stdout)
+            self.assertIn("@meta\ttool=sed-x\tpath=big.txt", cp.stdout)
