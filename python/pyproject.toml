@@ -1,0 +1,12 @@
+[project]
+name = "llm-inspect-wrappers-python"
+version = "0.1.0"
+description = "Python multicall wrappers for fd/rg/sed for LLM-friendly inspection."
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
