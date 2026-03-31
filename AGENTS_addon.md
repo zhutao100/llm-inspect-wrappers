@@ -12,7 +12,7 @@ Preferences:
 
 Workflow (capped, scope-first):
 1. Preflight overview: `fd-x -t d -d 2 --max-results 200 .` then `fd-x -t f -d 4 --max-results 200 .`
-2. Scoped search: `rg-x --color never -m 50 <pattern> src tests` (avoid `.` unless needed)
+2. Scoped search: `rg-x -m 50 <pattern> src tests` (avoid `.` unless needed)
 3. Read efficiently:
    - if `fd-x` reports `lines <= ~400`, read in one shot: `sed-x -n '1,400p' path`
    - otherwise, use tighter slices: `sed-x -n 'START,ENDp' path`
