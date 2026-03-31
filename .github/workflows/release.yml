@@ -1,0 +1,122 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to embed in artifact filenames (e.g. v0.1.0)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  VERSION: ${{ inputs.version || github.ref_name }}
+
+jobs:
+  package-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Package (bash + python)
+        run: scripts/package_release.sh --only scripts --version "$VERSION"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-scripts
+          path: dist
+
+  package-rust:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install fd + rg (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep fd-find
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+
+      - name: Install fd + rg (macOS)
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew install ripgrep fd
+
+      - name: Run tests
+        run: scripts/test_all.sh
+
+      - name: Package (rust)
+        run: scripts/package_release.sh --only rust --version "$VERSION"
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-rust-${{ matrix.os }}
+          path: dist
+
+  publish:
+    needs: [package-scripts, package-rust]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble release assets
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist
+          find artifacts -type f -name '*.tar.gz' -print0 | xargs -0 -I{} cp {} dist/
+
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          out = Path("dist") / "SHA256SUMS"
+          lines = []
+          for p in sorted(Path("dist").glob("*.tar.gz")):
+            h = hashlib.sha256()
+            with p.open("rb") as f:
+              for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+            lines.append(f"{h.hexdigest()}  {p.name}")
+          out.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+          PY
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
