@@ -45,8 +45,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
         return cmd_passthrough(tool, args);
     }
 
-    let mut cmd_args: Vec<OsString> = args.to_vec();
-    cmd_args.push(OsString::from("-0"));
+    let mut cmd_args: Vec<OsString> = vec![OsString::from("-0")];
+    cmd_args.extend_from_slice(args);
 
     let out = match cmd_capture(tool, &cmd_args) {
         Ok(o) => o,

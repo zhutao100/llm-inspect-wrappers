@@ -189,7 +189,7 @@ fd_x() {
 
   local -a out_rows=()
   local fifo pid tmpdir
-  if ! run_to_fifo fd "$@" -0; then
+  if ! run_to_fifo fd -0 "$@"; then
     exec fd "$@"
   fi
   fifo="$RUN_FIFO"
@@ -268,7 +268,7 @@ rg_x_filelist() {
 
   local -a out_rows=()
   local fifo pid tmpdir
-  if ! run_to_fifo rg "$@" -0; then
+  if ! run_to_fifo rg -0 "$@"; then
     exec rg "$@"
   fi
   fifo="$RUN_FIFO"

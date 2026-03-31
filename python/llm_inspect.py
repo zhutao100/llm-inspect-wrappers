@@ -411,7 +411,7 @@ def main_fd(args: list[str]) -> int:
     if not fd_x_supported(args):
         return passthrough([real, *args])
 
-    cp = run_capture([real, *args, "-0"])
+    cp = run_capture([real, "-0", *args])
     if cp.returncode != 0:
         return replay_raw(cp)
 
@@ -496,7 +496,7 @@ def render_rg_match_line(line_no: int | None, col_no: int | None, line_text: str
 
 def main_rg_filelist(args: list[str]) -> int:
     real = "rg"
-    cp = run_capture([real, *args, "-0"])
+    cp = run_capture([real, "-0", *args])
     if cp.returncode == 2:
         return replay_raw(cp)
 
@@ -512,7 +512,7 @@ def main_rg_filelist(args: list[str]) -> int:
 
 def main_rg_json(args: list[str]) -> int:
     real = "rg"
-    cp = run_capture([real, *args, "--json"])
+    cp = run_capture([real, "--json", *args])
     if cp.returncode == 2:
         return replay_raw(cp)
 
