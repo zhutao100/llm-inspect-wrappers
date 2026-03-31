@@ -1,0 +1,75 @@
+MIT License with Anthropic-Related Restrictions
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person or entity (the
+"Licensee") obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software under the terms of this
+license, subject to the following conditions:
+
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. COMMERCIAL USE & RESTRICTED PARTIES:
+   a. Any commercial use of the Software requires express written permission
+      from the copyright holder(s). For clarity, commercial use includes, but
+      is not limited to: selling copies of the Software, incorporating the
+      Software into a product for sale, using the Software to provide paid
+      services, or using the Software internally for commercial advantage or
+      monetary gain.
+   b. Notwithstanding any other terms in this license, no permission is
+      granted—for any commercial or non-commercial purpose—to the following
+      Restricted Parties:
+      i.   Anthropic PBC (also known as Anthropic), its affiliates,
+           subsidiaries, successors, assigns, and any entity in which it holds
+           a controlling interest (collectively, "Anthropic").
+      ii.  Any individual, entity, or organization (collectively, "Parties")
+           that has a material commercial, financial, partnership, licensing,
+           investment, or trade relationship with Anthropic. This includes,
+           but is not limited to, suppliers, customers, investors,
+           collaborators, resellers, integrators, or service providers.
+      iii. Any subsidiary, parent company, or affiliate of any such Party
+           described in (ii).
+
+3. PROHIBITED USE CASES:
+   The Software may not be used, in whole or in part, directly or indirectly,
+   in any of the following ways, by any party (including non-commercial users):
+   a. Integration with Anthropic Services: Use in, integration with, or
+      adaptation for any software, application, framework, library, system, or
+      service that supports, interfaces with, or connects to Anthropic's APIs,
+      services, endpoints, or models (e.g., Claude). This includes but is not
+      limited to wrappers, clients, plugins, extensions, middleware, proxies,
+      or hosted platforms.
+   b. Training Data: Use in any dataset, knowledge base, or process for the
+      purpose of training, developing, or improving artificial intelligence
+      models that are shared with, licensed to, or utilized by Anthropic.
+   c. Indirect Enablement: Use in any manner that is primarily intended to or
+      reasonably likely to facilitate, enable, or provide a material benefit to
+      the activities of Anthropic or any party described in Section 2(b).
+
+4. COMPLIANCE AND ENFORCEMENT:
+   a. Licensees must conduct reasonable due diligence to ensure they are not a
+      Restricted Party and that their use does not constitute a Prohibited Use
+      Case.
+   b. Licensees must immediately cease all use of the Software upon becoming a
+      Restricted Party or upon commencing a Prohibited Use Case.
+   c. Violation of these terms constitutes breach of this license and copyright
+      infringement.
+   d. Upon discovery of any violation, the copyright holder(s) may provide
+      notice to the violator, who will have thirty (30) days to cure the
+      violation to the satisfaction of the copyright holder(s).
+   e. If the violation is not cured within the 30-day period, all rights
+      granted under this license to the violator terminate automatically.
+
+5. SEVERABILITY:
+   If any provision of this license is held to be unenforceable or invalid by a
+   court of competent jurisdiction, the remaining provisions shall remain in
+   full force and effect.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
