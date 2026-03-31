@@ -54,7 +54,7 @@ run_to_fifo() {
     rm -rf "$tmpdir"
     return 2
   fi
-  "$@" >"$fifo" &
+  "$@" </dev/null >"$fifo" &
   pid=$!
   exec 9>&-
 
