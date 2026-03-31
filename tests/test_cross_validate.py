@@ -86,10 +86,15 @@ class Impl:
     name: str
     argv_prefix: list[str]
 
-    def run(self, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    def run(self, *args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        merged_env = None
+        if env is not None:
+            merged_env = dict(os.environ)
+            merged_env.update(env)
         return subprocess.run(
             [*self.argv_prefix, *args],
             cwd=str(cwd),
+            env=merged_env,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -151,9 +156,13 @@ class TestCrossValidateImplementations(unittest.TestCase):
             (root / "short.txt").write_text("needle here\n", encoding="utf-8")
             (root / "long.json").write_text('{"k":"' + ("x" * 3000) + '","needle":"y"}\n', encoding="utf-8")
 
+            rg_conf = root / "ripgrep.conf"
+            rg_conf.write_text("--quiet\n", encoding="utf-8")
+            env = {"RIPGREP_CONFIG_PATH": str(rg_conf)}
+
             parsed: dict[str, tuple[dict[str, dict[str, str]], dict[str, list[RgMatch]], dict[str, str]]] = {}
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root)
+                cp = impl.run("rg-x", "needle", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 parsed[impl.name] = parse_rg(cp.stdout)
 
@@ -194,9 +203,13 @@ class TestCrossValidateImplementations(unittest.TestCase):
             (root / "b.txt").write_text("nope\n", encoding="utf-8")
             (root / "dir" / "c.txt").write_text("needle here\n", encoding="utf-8")
 
+            rg_conf = root / "ripgrep.conf"
+            rg_conf.write_text("--quiet\n", encoding="utf-8")
+            env = {"RIPGREP_CONFIG_PATH": str(rg_conf)}
+
             expected = {"a.txt", "dir/c.txt"}
             for impl in self.impls:
-                cp = impl.run("rg-x", "-l", "needle", cwd=root)
+                cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 rows, meta = parse_file_table(cp.stdout)
                 self.assertEqual(meta.get("tool"), "rg-x")
@@ -208,7 +221,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 expected_bytes = st.st_size
                 expected_lines = (root / rel).read_text(encoding="utf-8").count("\n")
                 for impl in self.impls:
-                    cp = impl.run("rg-x", "-l", "needle", cwd=root)
+                    cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
                     rows, _ = parse_file_table(cp.stdout)
                     row = rows[rel]
                     self.assertEqual(row["kind"], "file")

@@ -16,10 +16,15 @@ def have_tools(*names: str) -> bool:
     return all(shutil.which(n) for n in names)
 
 
-def run_wrapped(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+def run_wrapped(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    merged_env = None
+    if env is not None:
+        merged_env = dict(os.environ)
+        merged_env.update(env)
     cp = subprocess.run(
         [sys.executable, str(SCRIPT), *args],
         cwd=str(cwd),
+        env=merged_env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -78,7 +83,12 @@ class TestLlmInspectPython(unittest.TestCase):
             long_line = '{"k":"' + ("x" * 3000) + '","needle":"y"}\n'
             (root / "long.json").write_text(long_line, encoding="utf-8")
 
-            cp = run_wrapped("rg-x", "needle", cwd=root)
+            # Ensure wrapper behavior is deterministic even if the environment enables a ripgrep rc
+            # via `RIPGREP_CONFIG_PATH` (e.g. one containing `--quiet`).
+            rg_conf = root / "ripgrep.conf"
+            rg_conf.write_text("--quiet\n", encoding="utf-8")
+
+            cp = run_wrapped("rg-x", "needle", cwd=root, env={"RIPGREP_CONFIG_PATH": str(rg_conf)})
             self.assertIn(cp.returncode, (0, 1), cp.stderr)
 
             lines = [ln for ln in cp.stdout.splitlines() if ln.strip()]
