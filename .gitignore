@@ -14,3 +14,4 @@ venv/
 
 # Tooling
 /.tmp/
+/dist/

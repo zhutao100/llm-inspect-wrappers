@@ -27,3 +27,11 @@ Run cross-validation:
 ```bash
 python3 -m unittest discover -s tests -q
 ```
+
+## Build & release
+
+Build + package all external-facing artifacts into `dist/`:
+
+```bash
+scripts/release_local.sh
+```
