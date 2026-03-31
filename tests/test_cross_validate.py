@@ -166,6 +166,32 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertIn("short.txt", rows)
 
+    def test_fd_x_dir_rows_are_path_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "d1").mkdir()
+            (root / "d2").mkdir()
+            (root / "d2" / "nested").mkdir()
+
+            for impl in self.impls:
+                cp = impl.run("fd-x", "-td", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "fd-x")
+                self.assertGreaterEqual(len(rows), 2)
+                for fields in rows.values():
+                    self.assertEqual(fields, {})
+
+    def test_fd_x_help_is_passthrough(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for impl in self.impls:
+                cp = impl.run("fd-x", "--help", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertGreaterEqual(len(cp.stdout.splitlines()), 10)
+                self.assertNotIn("@meta\ttool=fd-x", cp.stdout)
+                self.assertNotIn("\\n", cp.stdout)
+
     def test_rg_x_match_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

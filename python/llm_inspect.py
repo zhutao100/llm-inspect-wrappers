@@ -249,7 +249,7 @@ def render_file_table(tool: str, paths: list[str], max_rows: int, mode: str | No
         if meta.kind == "file":
             out.append(f"{escape_field(p)}\tbytes={b}\tlines={l}")
         else:
-            out.append(f"{escape_field(p)}\tkind={meta.kind}\tbytes={b}\tlines={l}")
+            out.append(escape_field(p))
 
     meta_fields = [f"@meta\ttool={tool}"]
     if mode is not None:
@@ -391,6 +391,10 @@ FD_UNSUPPORTED_EXACT = {
     "--print0",
     "-l",
     "--list-details",
+    "-h",
+    "--help",
+    "-V",
+    "--version",
     "-x",
     "-X",
     "--exec",
@@ -455,6 +459,9 @@ def main_fd(args: list[str]) -> int:
 
     cp = run_capture([real, "--color=never", "-0", *args])
     if cp.returncode != 0:
+        return replay_raw(cp)
+
+    if cp.stdout and b"\x00" not in cp.stdout:
         return replay_raw(cp)
 
     try:

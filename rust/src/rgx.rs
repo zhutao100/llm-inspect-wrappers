@@ -127,13 +127,7 @@ fn render_file_table(tool: &str, mode: Option<&str>, paths: Vec<PathBuf>, cfg: &
         if meta.kind == PathKind::File {
             println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
         } else {
-            println!(
-                "{}\tkind={}\tbytes={}\tlines={}",
-                escape_field(&path_s),
-                meta.kind.as_str(),
-                bytes,
-                lines
-            );
+            println!("{}", escape_field(&path_s));
         }
     }
 

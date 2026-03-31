@@ -66,7 +66,19 @@ fn fd_x_supported(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "-0" | "--print0" | "-l" | "--list-details" | "-x" | "-X" | "--exec" | "--exec-batch" | "--format" => {
+            "-0"
+            | "--print0"
+            | "-l"
+            | "--list-details"
+            | "-h"
+            | "--help"
+            | "-V"
+            | "--version"
+            | "-x"
+            | "-X"
+            | "--exec"
+            | "--exec-batch"
+            | "--format" => {
                 return false;
             }
             _ => {}
@@ -105,6 +117,10 @@ pub fn run(args: &[OsString]) -> ExitCode {
         return crate::common::replay_raw(&out);
     }
 
+    if !out.stdout.is_empty() && !out.stdout.contains(&0) {
+        return crate::common::replay_raw(&out);
+    }
+
     let paths = split_nul_paths(&out.stdout);
     let total = paths.len();
 
@@ -125,13 +141,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
         if meta.kind == PathKind::File {
             println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
         } else {
-            println!(
-                "{}\tkind={}\tbytes={}\tlines={}",
-                escape_field(&path_s),
-                meta.kind.as_str(),
-                bytes,
-                lines
-            );
+            println!("{}", escape_field(&path_s));
         }
     }
 
