@@ -1,0 +1,5 @@
+docs/* linguist-documentation
+scripts/* linguist-vendored
+
+*.py linguist-detectable=false
+*.sh linguist-detectable=false
