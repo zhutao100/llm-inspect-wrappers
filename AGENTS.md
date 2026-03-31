@@ -24,6 +24,7 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
 - Output formats must stay consistent across implementations; `tests/` is the living spec.
 - Bash must remain compatible with macOS `/bin/bash` 3.2 (no Bash 4+ features like associative arrays, no `lastpipe`).
 - Preserve canonical semantics: if an `fd`/`rg` flag changes the output shape (context, replacements, custom formats, etc.), passthrough.
+- Determinism: wrapped `rg` calls ignore `RIPGREP_CONFIG_PATH` (passthrough keeps the original environment).
 - Avoid committing machine-local paths; pre-commit runs `internal/check_repo_hygiene.py`.
 
 ## Repo-inspection hygiene (for agentic sessions)

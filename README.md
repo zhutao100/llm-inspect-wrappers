@@ -17,6 +17,8 @@ Each implementation provides the same wrapper names:
 - `rg-x` — search + file metadata + long-line gating (match mode)
 - `sed-x` — ranged reads (`sed -n 'a,bp' file`) + long-line gating + file metadata
 
+For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFIG_PATH` (passthrough modes keep the original environment).
+
 ## Tests
 
 - Per-implementation tests live under each subdirectory.
