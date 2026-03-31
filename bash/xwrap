@@ -265,6 +265,38 @@ rg_is_filelist_mode() {
   return 1
 }
 
+rg_strip_color_args() {
+  # Print NUL-separated args with any --color flags removed (only before "--").
+  local after_end_of_options=0
+
+  while (( $# )); do
+    local a="$1"
+    shift
+
+    if (( after_end_of_options )); then
+      printf '%s\0' "$a"
+      continue
+    fi
+
+    if [[ "$a" == "--" ]]; then
+      after_end_of_options=1
+      printf '%s\0' "$a"
+      continue
+    fi
+
+    if [[ "$a" == "--color" ]]; then
+      shift || true
+      continue
+    fi
+
+    if [[ "$a" == --color=* ]]; then
+      continue
+    fi
+
+    printf '%s\0' "$a"
+  done
+}
+
 
 rg_x_filelist() {
   local total=0
@@ -272,8 +304,8 @@ rg_x_filelist() {
 
   local -a out_rows=()
   local fifo pid tmpdir
-  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg -0 "$@"; then
-    exec rg "$@"
+  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never -0 "$@"; then
+    exec rg --color=never "$@"
   fi
   fifo="$RUN_FIFO"
   pid="$RUN_PID"
@@ -294,7 +326,7 @@ rg_x_filelist() {
   rm -rf "$tmpdir"
 
   if (( rc == 2 )); then
-    exec rg "$@"
+    exec rg --color=never "$@"
   fi
 
   if (( ${#out_rows[@]} > 0 )); then
@@ -389,7 +421,7 @@ rg_x_match() {
 
   local fifo pid tmpdir
   if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --no-heading --line-number --column "$@"; then
-    exec rg "$@"
+    exec rg --color=never "$@"
   fi
   fifo="$RUN_FIFO"
   pid="$RUN_PID"
@@ -430,7 +462,7 @@ rg_x_match() {
   rm -rf "$tmpdir"
 
   if (( rc == 2 )); then
-    exec rg "$@"
+    exec rg --color=never "$@"
   fi
 
   flush_current
@@ -452,16 +484,22 @@ rg_x_match() {
 
 
 rg_x() {
-  if rg_should_passthrough "$@"; then
-    exec rg "$@"
+  local -a argv=()
+  local a
+  while IFS= read -r -d '' a; do
+    argv+=("$a")
+  done < <(rg_strip_color_args "$@")
+
+  if rg_should_passthrough "${argv[@]}"; then
+    exec rg --color=never "${argv[@]}"
   fi
 
-  if rg_is_filelist_mode "$@"; then
-    rg_x_filelist "$@"
+  if rg_is_filelist_mode "${argv[@]}"; then
+    rg_x_filelist "${argv[@]}"
     return $?
   fi
 
-  rg_x_match "$@"
+  rg_x_match "${argv[@]}"
 }
 
 

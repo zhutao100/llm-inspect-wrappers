@@ -472,6 +472,39 @@ def short_flag_bundle_contains(arg: str, chars: set[str]) -> bool:
     return arg.startswith("-") and not arg.startswith("--") and any(c in arg[1:] for c in chars)
 
 
+def rg_strip_color_args(args: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 0
+    after_end_of_options = False
+
+    while i < len(args):
+        a = args[i]
+
+        if after_end_of_options:
+            out.append(a)
+            i += 1
+            continue
+
+        if a == "--":
+            after_end_of_options = True
+            out.append(a)
+            i += 1
+            continue
+
+        if a == "--color":
+            i += 2
+            continue
+
+        if a.startswith("--color="):
+            i += 1
+            continue
+
+        out.append(a)
+        i += 1
+
+    return out
+
+
 def rg_should_passthrough(args: list[str]) -> bool:
     for a in args:
         if a in RG_PASSTHROUGH_EXACT:
@@ -504,7 +537,7 @@ def render_rg_match_line(line_no: int | None, col_no: int | None, line_text: str
 
 def main_rg_filelist(args: list[str]) -> int:
     real = "rg"
-    cp = run_capture([real, "-0", *args])
+    cp = run_capture([real, "--color=never", "-0", *args])
     if cp.returncode == 2:
         return replay_raw(cp)
 
@@ -520,7 +553,7 @@ def main_rg_filelist(args: list[str]) -> int:
 
 def main_rg_json(args: list[str]) -> int:
     real = "rg"
-    cp = run_capture([real, "--json", *args])
+    cp = run_capture([real, "--color=never", "--json", *args])
     if cp.returncode == 2:
         return replay_raw(cp)
 
@@ -609,8 +642,9 @@ def main_rg_json(args: list[str]) -> int:
 
 def main_rg(args: list[str]) -> int:
     real = "rg"
+    args = rg_strip_color_args(args)
     if rg_should_passthrough(args):
-        return passthrough([real, *args])
+        return passthrough([real, "--color=never", *args])
     if rg_is_filelist_mode(args):
         return main_rg_filelist(args)
     return main_rg_json(args)

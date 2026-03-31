@@ -29,6 +29,44 @@ fn split_nul_paths(buf: &[u8]) -> Vec<PathBuf> {
         .collect()
 }
 
+fn rg_strip_color_args(args: &[OsString]) -> Vec<OsString> {
+    let mut out: Vec<OsString> = Vec::with_capacity(args.len());
+    let mut i = 0;
+    let mut after_end_of_options = false;
+
+    while i < args.len() {
+        let a = &args[i];
+
+        if after_end_of_options {
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--") {
+            after_end_of_options = true;
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--color") {
+            i += 2;
+            continue;
+        }
+
+        if a.to_string_lossy().starts_with("--color=") {
+            i += 1;
+            continue;
+        }
+
+        out.push(a.clone());
+        i += 1;
+    }
+
+    out
+}
+
 fn rg_should_passthrough(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
@@ -168,17 +206,20 @@ fn rg_match_col_no(submatches: &[RgSubmatch]) -> u64 {
 pub fn run(args: &[OsString]) -> ExitCode {
     let cfg = Config::from_env();
     let tool: &OsStr = OsStr::new("rg");
+    let args = rg_strip_color_args(args);
 
-    if rg_should_passthrough(args) {
-        return cmd_passthrough(tool, args);
+    if rg_should_passthrough(&args) {
+        let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never")];
+        cmd_args.extend_from_slice(&args);
+        return cmd_passthrough(tool, &cmd_args);
     }
 
-    if rg_is_filelist_mode(args) {
-        let mut cmd_args: Vec<OsString> = vec![OsString::from("-0")];
-        cmd_args.extend_from_slice(args);
+    if rg_is_filelist_mode(&args) {
+        let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never"), OsString::from("-0")];
+        cmd_args.extend_from_slice(&args);
         let out = match cmd_capture(tool, &cmd_args) {
             Ok(o) => o,
-            Err(_) => return cmd_passthrough(tool, args),
+            Err(_) => return cmd_passthrough(tool, &args),
         };
         let code = exit_code_from_status(out.status);
         if out.status.code() == Some(2) {
@@ -191,11 +232,11 @@ pub fn run(args: &[OsString]) -> ExitCode {
     }
 
     // Match mode: use `rg --json` for structured output.
-    let mut cmd_args: Vec<OsString> = vec![OsString::from("--json")];
-    cmd_args.extend_from_slice(args);
+    let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never"), OsString::from("--json")];
+    cmd_args.extend_from_slice(&args);
     let out = match cmd_capture(tool, &cmd_args) {
         Ok(o) => o,
-        Err(_) => return cmd_passthrough(tool, args),
+        Err(_) => return cmd_passthrough(tool, &args),
     };
 
     let code = exit_code_from_status(out.status);
