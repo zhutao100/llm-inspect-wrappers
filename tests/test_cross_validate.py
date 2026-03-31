@@ -157,6 +157,15 @@ class TestCrossValidateImplementations(unittest.TestCase):
                     self.assertEqual(int(row["bytes"]), expected_bytes)
                     self.assertEqual(int(row["lines"]), expected_lines)
 
+            # Color flags should not introduce ANSI escapes or break path parsing.
+            for impl in self.impls:
+                cp = impl.run("fd-x", "--color=always", "short", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertNotIn("\x1b", cp.stdout)
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "fd-x")
+                self.assertIn("short.txt", rows)
+
     def test_rg_x_match_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -218,6 +227,16 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "filelist")
+                self.assertTrue(expected.issubset(rows.keys()))
+
+            # Color flags should not introduce ANSI escapes or break NUL parsing.
+            for impl in self.impls:
+                cp = impl.run("rg-x", "--color=always", "-l", "needle", cwd=root, env=env)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertNotIn("\x1b", cp.stdout)
                 rows, meta = parse_file_table(cp.stdout)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "filelist")

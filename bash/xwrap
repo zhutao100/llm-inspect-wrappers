@@ -182,10 +182,48 @@ fd_x_supported() {
   return 0
 }
 
+fd_strip_color_args() {
+  # Print NUL-separated args with any -c/--color flags removed (only before "--").
+  local after_end_of_options=0
+
+  while (( $# )); do
+    local a="$1"
+    shift
+
+    if (( after_end_of_options )); then
+      printf '%s\0' "$a"
+      continue
+    fi
+
+    if [[ "$a" == "--" ]]; then
+      after_end_of_options=1
+      printf '%s\0' "$a"
+      continue
+    fi
+
+    if [[ "$a" == "--color" ]] || [[ "$a" == "-c" ]]; then
+      shift || true
+      continue
+    fi
+
+    if [[ "$a" == --color=* ]] || [[ "$a" == -c* ]]; then
+      continue
+    fi
+
+    printf '%s\0' "$a"
+  done
+}
+
 
 fd_x() {
-  if ! fd_x_supported "$@"; then
-    exec fd "$@"
+  local -a argv=()
+  local a
+  while IFS= read -r -d '' a; do
+    argv+=("$a")
+  done < <(fd_strip_color_args "$@")
+
+  if ! fd_x_supported "${argv[@]}"; then
+    exec fd --color=never "${argv[@]}"
   fi
 
   local total=0
@@ -193,8 +231,8 @@ fd_x() {
 
   local -a out_rows=()
   local fifo pid tmpdir
-  if ! run_to_fifo fd -0 "$@"; then
-    exec fd "$@"
+  if ! run_to_fifo fd --color=never -0 "${argv[@]}"; then
+    exec fd --color=never "${argv[@]}"
   fi
   fifo="$RUN_FIFO"
   pid="$RUN_PID"
@@ -215,7 +253,7 @@ fd_x() {
   rm -rf "$tmpdir"
 
   if (( rc != 0 )); then
-    exec fd "$@"
+    exec fd --color=never "${argv[@]}"
   fi
 
   if (( ${#out_rows[@]} > 0 )); then

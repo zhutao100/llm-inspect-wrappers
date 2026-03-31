@@ -23,6 +23,45 @@ fn split_nul_paths(buf: &[u8]) -> Vec<PathBuf> {
         .collect()
 }
 
+fn fd_strip_color_args(args: &[OsString]) -> Vec<OsString> {
+    let mut out: Vec<OsString> = Vec::with_capacity(args.len());
+    let mut i = 0;
+    let mut after_end_of_options = false;
+
+    while i < args.len() {
+        let a = &args[i];
+
+        if after_end_of_options {
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--") {
+            after_end_of_options = true;
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--color") || a == OsStr::new("-c") {
+            i += 2;
+            continue;
+        }
+
+        let s = a.to_string_lossy();
+        if s.starts_with("--color=") || s.starts_with("-c") {
+            i += 1;
+            continue;
+        }
+
+        out.push(a.clone());
+        i += 1;
+    }
+
+    out
+}
+
 fn fd_x_supported(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
@@ -42,17 +81,24 @@ fn fd_x_supported(args: &[OsString]) -> bool {
 pub fn run(args: &[OsString]) -> ExitCode {
     let cfg = Config::from_env();
     let tool: &OsStr = OsStr::new("fd");
+    let args = fd_strip_color_args(args);
 
-    if !fd_x_supported(args) {
-        return cmd_passthrough(tool, args);
+    if !fd_x_supported(&args) {
+        let mut pass_args: Vec<OsString> = vec![OsString::from("--color=never")];
+        pass_args.extend_from_slice(&args);
+        return cmd_passthrough(tool, &pass_args);
     }
 
-    let mut cmd_args: Vec<OsString> = vec![OsString::from("-0")];
-    cmd_args.extend_from_slice(args);
+    let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never"), OsString::from("-0")];
+    cmd_args.extend_from_slice(&args);
 
     let out = match cmd_capture(tool, &cmd_args) {
         Ok(o) => o,
-        Err(_) => return cmd_passthrough(tool, args),
+        Err(_) => {
+            let mut pass_args: Vec<OsString> = vec![OsString::from("--color=never")];
+            pass_args.extend_from_slice(&args);
+            return cmd_passthrough(tool, &pass_args);
+        }
     };
 
     if !out.status.success() {

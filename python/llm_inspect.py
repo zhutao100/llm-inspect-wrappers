@@ -413,13 +413,47 @@ def fd_x_supported(args: list[str]) -> bool:
     return True
 
 
+def fd_strip_color_args(args: list[str]) -> list[str]:
+    out: list[str] = []
+    i = 0
+    after_end_of_options = False
+
+    while i < len(args):
+        a = args[i]
+
+        if after_end_of_options:
+            out.append(a)
+            i += 1
+            continue
+
+        if a == "--":
+            after_end_of_options = True
+            out.append(a)
+            i += 1
+            continue
+
+        if a in ("--color", "-c"):
+            i += 2
+            continue
+
+        if a.startswith("--color=") or a.startswith("-c"):
+            i += 1
+            continue
+
+        out.append(a)
+        i += 1
+
+    return out
+
+
 def main_fd(args: list[str]) -> int:
     real = "fd"
+    args = fd_strip_color_args(args)
 
     if not fd_x_supported(args):
-        return passthrough([real, *args])
+        return passthrough([real, "--color=never", *args])
 
-    cp = run_capture([real, "-0", *args])
+    cp = run_capture([real, "--color=never", "-0", *args])
     if cp.returncode != 0:
         return replay_raw(cp)
 
