@@ -95,6 +95,7 @@ class Impl:
             [*self.argv_prefix, *args],
             cwd=str(cwd),
             env=merged_env,
+            input="",
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

@@ -26,6 +26,7 @@ def run_xwrap(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subpr
         [BASH, str(SCRIPT), *args],
         cwd=str(cwd),
         env=merged_env,
+        input="",
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

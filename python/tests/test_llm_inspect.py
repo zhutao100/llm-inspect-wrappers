@@ -25,6 +25,7 @@ def run_wrapped(*args: str, cwd: Path, env: dict[str, str] | None = None) -> sub
         [sys.executable, str(SCRIPT), *args],
         cwd=str(cwd),
         env=merged_env,
+        input="",
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
