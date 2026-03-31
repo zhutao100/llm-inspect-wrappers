@@ -53,6 +53,17 @@ Stdin total scanning is bounded by:
 - `LLM_X_SEDX_STDIN_MAX_LINES` (default: `200000`)
 - `LLM_X_SEDX_STDIN_MAX_BYTES` (default: `10000000`)
 
+## Caps & omissions
+
+Wrappers intentionally cap printed output (and report totals via `@meta`) to avoid flooding an LLM context window.
+
+Key knobs:
+- `LLM_X_MAX_FD_ROWS` (file tables: `fd-x`, `rg-x -l`, etc.)
+- `LLM_X_MAX_RG_FILES` (file groups in `rg-x` match mode)
+- `LLM_X_MAX_RG_MATCH_LINES_PER_FILE` (match lines per file in `rg-x` match mode)
+
+Details: `docs/caps_and_omissions.md`
+
 ## Tests
 
 - Per-implementation tests live under each subdirectory.
