@@ -43,6 +43,9 @@ class Config:
     preview_head_chars: int = int(os.getenv("LLM_X_HEAD_CHARS", "160"))
     preview_tail_chars: int = int(os.getenv("LLM_X_TAIL_CHARS", "80"))
 
+    sedx_stdin_max_lines: int = int(os.getenv("LLM_X_SEDX_STDIN_MAX_LINES", "200000"))
+    sedx_stdin_max_bytes: int = int(os.getenv("LLM_X_SEDX_STDIN_MAX_BYTES", "10000000"))
+
     wc_batch_arg_budget: int = int(os.getenv("LLM_X_WC_ARG_BUDGET", "60000"))
 
 
@@ -775,8 +778,10 @@ def main_sed(args: list[str]) -> int:
 
     try:
         truncated = 0
-        printed_lines = 0
-        printed_bytes = 0
+        total_lines = 0
+        total_bytes = 0
+        complete = True
+        reason: str | None = None
 
         if spec.source == "file":
             if spec.path is None:
@@ -795,8 +800,6 @@ def main_sed(args: list[str]) -> int:
                         break
                     rendered, was_truncated = render_sed_line(lineno, raw)
                     sys.stdout.buffer.write(rendered)
-                    printed_lines += 1
-                    printed_bytes += len(rendered)
                     if was_truncated:
                         truncated += 1
 
@@ -810,23 +813,35 @@ def main_sed(args: list[str]) -> int:
             ]
             sys.stdout.write("\t".join(meta_parts) + "\n")
         else:
+            is_tty = sys.stdin.isatty()
             for lineno, raw in enumerate(sys.stdin.buffer, start=1):
-                if lineno < spec.start:
-                    continue
-                if lineno > spec.end:
+                total_lines = lineno
+                total_bytes += len(raw)
+
+                if spec.start <= lineno <= spec.end:
+                    rendered, was_truncated = render_sed_line(lineno, raw)
+                    sys.stdout.buffer.write(rendered)
+                    if was_truncated:
+                        truncated += 1
+
+                if is_tty and lineno >= spec.end:
+                    complete = False
+                    reason = "tty"
                     break
-                rendered, was_truncated = render_sed_line(lineno, raw)
-                sys.stdout.buffer.write(rendered)
-                printed_lines += 1
-                printed_bytes += len(rendered)
-                if was_truncated:
-                    truncated += 1
+
+                if not is_tty and lineno >= spec.end:
+                    if total_lines >= CFG.sedx_stdin_max_lines or total_bytes >= CFG.sedx_stdin_max_bytes:
+                        complete = False
+                        reason = "cap"
+                        break
 
             meta_parts = [
                 "@meta\ttool=sed-x\tsource=stdin",
                 f"range={spec.start}..{spec.end}",
-                f"printed_lines={printed_lines}",
-                f"printed_bytes={printed_bytes}",
+                f"bytes={total_bytes}",
+                f"lines={total_lines}",
+                f"complete={1 if complete else 0}",
+                *(["reason=" + reason] if reason else []),
                 *(["truncated_lines=" + str(truncated)] if truncated else []),
             ]
             sys.stdout.write("\t".join(meta_parts) + "\n")

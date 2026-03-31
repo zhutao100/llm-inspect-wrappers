@@ -134,6 +134,8 @@ mod tests {
             max_fd_rows: 0,
             max_rg_files: 0,
             max_rg_match_lines_per_file: 0,
+            sedx_stdin_max_lines: 0,
+            sedx_stdin_max_bytes: 0,
         };
         let raw = b"0123456789ABCDEF";
         let (gate, kind) = should_gate_line(raw, &cfg);
@@ -151,6 +153,8 @@ mod tests {
             max_fd_rows: 0,
             max_rg_files: 0,
             max_rg_match_lines_per_file: 0,
+            sedx_stdin_max_lines: 0,
+            sedx_stdin_max_bytes: 0,
         };
         let raw = b"abc\n";
         let (gate, kind) = should_gate_line(raw, &cfg);

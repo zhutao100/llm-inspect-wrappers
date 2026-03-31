@@ -43,6 +43,16 @@ fd-x -td
 # @meta	tool=fd-x	total=2	printed=2	omitted=0
 ```
 
+`sed-x` prints the selected range, then a single `@meta` line.
+
+- File input: `@meta<TAB>tool=sed-x<TAB>path=...<TAB>bytes=...<TAB>lines=...<TAB>range=a..b` (plus `truncated_lines=...` when gating occurs)
+- Stdin input: `@meta<TAB>tool=sed-x<TAB>source=stdin<TAB>range=a..b<TAB>bytes=...<TAB>lines=...<TAB>complete=0|1`
+  - When `complete=0`, `reason=cap` (hit a scan cap) or `reason=tty` (stdin is a terminal and was not drained).
+
+Stdin total scanning is bounded by:
+- `LLM_X_SEDX_STDIN_MAX_LINES` (default: `200000`)
+- `LLM_X_SEDX_STDIN_MAX_BYTES` (default: `10000000`)
+
 ## Tests
 
 - Per-implementation tests live under each subdirectory.

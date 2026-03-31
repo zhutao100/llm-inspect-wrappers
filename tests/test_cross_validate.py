@@ -81,6 +81,13 @@ def parse_rg(stdout: str) -> tuple[dict[str, dict[str, str]], dict[str, list[RgM
     return headers, matches, meta
 
 
+def parse_meta_line(stdout: str) -> dict[str, str]:
+    for line in [ln for ln in stdout.splitlines() if ln.strip()]:
+        if line.startswith("@meta\t"):
+            return parse_kv_fields(line.split("\t")[1:])
+    return {}
+
+
 @dataclass(frozen=True)
 class Impl:
     name: str
@@ -300,6 +307,42 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("sed-x", "-n", "1,1p", cwd=root, stdin=long_line)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("sed-x truncated line=1", cp.stdout)
-                self.assertIn("@meta\ttool=sed-x\tsource=stdin", cp.stdout)
-                self.assertIn("printed_lines=1", cp.stdout)
-                self.assertIn("truncated_lines=1", cp.stdout)
+                meta = parse_meta_line(cp.stdout)
+                self.assertEqual(meta.get("tool"), "sed-x")
+                self.assertEqual(meta.get("source"), "stdin")
+                self.assertEqual(meta.get("range"), "1..1")
+                self.assertEqual(int(meta.get("lines", "0")), 1)
+                self.assertEqual(meta.get("complete"), "1")
+                self.assertEqual(meta.get("truncated_lines"), "1")
+
+    def test_sed_x_stdin_totals_beyond_end(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            stdin = "".join(f"{i}\n" for i in range(10))
+
+            for impl in self.impls:
+                cp = impl.run("sed-x", "-n", "1,3p", cwd=root, stdin=stdin)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                meta = parse_meta_line(cp.stdout)
+                self.assertEqual(meta.get("tool"), "sed-x")
+                self.assertEqual(meta.get("source"), "stdin")
+                self.assertEqual(meta.get("range"), "1..3")
+                self.assertEqual(int(meta.get("lines", "0")), 10)
+                self.assertEqual(meta.get("complete"), "1")
+
+    def test_sed_x_stdin_totals_capped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            stdin = "x\n" * 1000
+            env = {"LLM_X_SEDX_STDIN_MAX_LINES": "5"}
+
+            for impl in self.impls:
+                cp = impl.run("sed-x", "-n", "1,1p", cwd=root, env=env, stdin=stdin)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                meta = parse_meta_line(cp.stdout)
+                self.assertEqual(meta.get("tool"), "sed-x")
+                self.assertEqual(meta.get("source"), "stdin")
+                self.assertEqual(meta.get("range"), "1..1")
+                self.assertEqual(int(meta.get("lines", "0")), 5)
+                self.assertEqual(meta.get("complete"), "0")
+                self.assertEqual(meta.get("reason"), "cap")

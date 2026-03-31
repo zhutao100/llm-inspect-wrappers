@@ -2,7 +2,7 @@ use crate::common::{cmd_passthrough, escape_field, path_meta, strip_dot_slash, C
 use crate::gate::{classify_line, truncated_marker, LineKind};
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -97,13 +97,17 @@ pub fn run(args: &[OsString]) -> ExitCode {
         return cmd_passthrough(tool, args);
     };
 
+    let is_stdin = matches!(&spec.input, SedInput::Stdin);
+    let stdin_is_tty = is_stdin && std::io::stdin().is_terminal();
     let mut out = std::io::stdout().lock();
 
     let mut buf: Vec<u8> = Vec::new();
     let mut lineno: u64 = 0;
     let mut truncated: u64 = 0;
-    let mut printed_lines: u64 = 0;
-    let mut printed_bytes: u64 = 0;
+    let mut stdin_bytes: u64 = 0;
+    let mut stdin_complete: bool = true;
+    let mut stdin_reason: Option<&'static str> = None;
+    let mut reached_eof: bool = false;
 
     let mut r: Box<dyn BufRead> = match &spec.input {
         SedInput::File(p) => {
@@ -116,18 +120,21 @@ pub fn run(args: &[OsString]) -> ExitCode {
         SedInput::Stdin => Box::new(BufReader::new(std::io::stdin().lock())),
     };
 
-    while {
+    while lineno < spec.end {
         buf.clear();
         let n = r.read_until(b'\n', &mut buf).unwrap_or(0);
-        n != 0
-    } {
+        if n == 0 {
+            reached_eof = true;
+            break;
+        }
         lineno += 1;
+
+        if is_stdin {
+            stdin_bytes += n as u64;
+        }
 
         if lineno < spec.start {
             continue;
-        }
-        if lineno > spec.end {
-            break;
         }
 
         let (gate, kind) = crate::gate::should_gate_line(&buf, &cfg);
@@ -142,12 +149,36 @@ pub fn run(args: &[OsString]) -> ExitCode {
             let marker = truncated_marker(&format!("sed-x truncated line={}", lineno), &buf, kind, &cfg);
             let _ = out.write_all(marker.as_bytes());
             let _ = out.write_all(b"\n");
-            printed_lines += 1;
-            printed_bytes += marker.as_bytes().len() as u64 + 1;
         } else {
             let _ = out.write_all(&buf);
-            printed_lines += 1;
-            printed_bytes += buf.len() as u64;
+        }
+    }
+
+    if is_stdin && !reached_eof {
+        if stdin_is_tty {
+            stdin_complete = false;
+            stdin_reason = Some("tty");
+        } else {
+            let max_lines = cfg.sedx_stdin_max_lines as u64;
+            let max_bytes = cfg.sedx_stdin_max_bytes as u64;
+
+            while lineno < max_lines && stdin_bytes < max_bytes {
+                buf.clear();
+                let n = r.read_until(b'\n', &mut buf).unwrap_or(0);
+                if n == 0 {
+                    reached_eof = true;
+                    break;
+                }
+                lineno += 1;
+                stdin_bytes += n as u64;
+            }
+
+            if reached_eof {
+                stdin_complete = true;
+            } else {
+                stdin_complete = false;
+                stdin_reason = Some("cap");
+            }
         }
     }
 
@@ -203,22 +234,28 @@ pub fn run(args: &[OsString]) -> ExitCode {
             }
         }
         SedInput::Stdin => {
+            let complete = if stdin_complete { 1 } else { 0 };
             if truncated > 0 {
+                if let Some(reason) = stdin_reason {
+                    println!(
+                        "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\treason={}\ttruncated_lines={}",
+                        spec.start, spec.end, stdin_bytes, lineno, complete, reason, truncated
+                    );
+                } else {
+                    println!(
+                        "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\ttruncated_lines={}",
+                        spec.start, spec.end, stdin_bytes, lineno, complete, truncated
+                    );
+                }
+            } else if let Some(reason) = stdin_reason {
                 println!(
-                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tprinted_lines={}\tprinted_bytes={}\ttruncated_lines={}",
-                    spec.start,
-                    spec.end,
-                    printed_lines,
-                    printed_bytes,
-                    truncated
+                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\treason={}",
+                    spec.start, spec.end, stdin_bytes, lineno, complete, reason
                 );
             } else {
                 println!(
-                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tprinted_lines={}\tprinted_bytes={}",
-                    spec.start,
-                    spec.end,
-                    printed_lines,
-                    printed_bytes
+                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}",
+                    spec.start, spec.end, stdin_bytes, lineno, complete
                 );
             }
         }

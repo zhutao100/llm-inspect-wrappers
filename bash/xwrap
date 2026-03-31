@@ -25,6 +25,9 @@ HARD_LINE_CHARS="${LLM_X_HARD_LINE_CHARS:-2000}"
 HEAD_CHARS="${LLM_X_HEAD_CHARS:-160}"
 TAIL_CHARS="${LLM_X_TAIL_CHARS:-80}"
 
+SEDX_STDIN_MAX_LINES="${LLM_X_SEDX_STDIN_MAX_LINES:-200000}"
+SEDX_STDIN_MAX_BYTES="${LLM_X_SEDX_STDIN_MAX_BYTES:-10000000}"
+
 
 escape_field() {
   local s="${1-}"
@@ -609,54 +612,68 @@ sed_x() {
 
   if [[ "$file" == "-" ]]; then
     local truncated=0
-    local printed_lines=0
-    local printed_bytes=0
+    local total_bytes=0
     local line_no=0
-    local -a out_lines=()
+    local complete=1
+    local reason=""
+    local is_tty=0
+    if [[ -t 0 ]]; then
+      is_tty=1
+    fi
 
-    while IFS= read -r line; do
-      line_no=$((line_no + 1))
-      if (( line_no < start )); then
-        continue
+    while true; do
+      local line rc add_nl kind_line
+      IFS= read -r line
+      rc=$?
+      if (( rc != 0 )); then
+        [[ -n "$line" ]] || break
       fi
-      if (( line_no > end )); then
+
+      line_no=$((line_no + 1))
+      add_nl=0
+      if (( rc == 0 )); then
+        add_nl=1
+      fi
+      total_bytes=$((total_bytes + ${#line} + add_nl))
+
+      if (( line_no >= start && line_no <= end )); then
+        kind_line="$(classify_line_kind "$line")"
+        if [[ "$kind_line" == "plain" ]]; then
+          printf '%s\n' "$line"
+        else
+          truncated=$((truncated + 1))
+          printf '%s\n' "$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")"
+        fi
+      fi
+
+      if (( is_tty == 1 && line_no >= end )); then
+        complete=0
+        reason="tty"
         break
       fi
 
-      local kind_line
-      kind_line="$(classify_line_kind "$line")"
-      if [[ "$kind_line" == "plain" ]]; then
-        out_lines+=("$line")
-      else
-        truncated=$((truncated + 1))
-        out_lines+=("$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")")
+      if (( is_tty == 0 && line_no >= end )); then
+        if (( line_no >= SEDX_STDIN_MAX_LINES || total_bytes >= SEDX_STDIN_MAX_BYTES )); then
+          complete=0
+          reason="cap"
+          break
+        fi
       fi
     done
 
-    if (( ${#out_lines[@]} > 0 )); then
-      printf '%s\n' "${out_lines[@]}"
+    printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tbytes=%s\tlines=%s\tcomplete=%s' \
+      "$start" \
+      "$end" \
+      "$total_bytes" \
+      "$line_no" \
+      "$complete"
+    if [[ -n "$reason" ]]; then
+      printf '\treason=%s' "$reason"
     fi
-
-    printed_lines="${#out_lines[@]}"
-    local ln
-    for ln in "${out_lines[@]}"; do
-      printed_bytes=$((printed_bytes + ${#ln} + 1))
-    done
-
     if (( truncated > 0 )); then
-      printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tprinted_lines=%s\tprinted_bytes=%s\ttruncated_lines=%s\n' \
-        "$start" \
-        "$end" \
-        "$printed_lines" \
-        "$printed_bytes" \
-        "$truncated"
-    else
-      printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tprinted_lines=%s\tprinted_bytes=%s\n' \
-        "$start" \
-        "$end" \
-        "$printed_lines" \
-        "$printed_bytes"
+      printf '\ttruncated_lines=%s' "$truncated"
     fi
+    printf '\n'
     return 0
   fi
 
