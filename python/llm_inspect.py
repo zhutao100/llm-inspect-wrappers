@@ -87,6 +87,9 @@ def env_c() -> dict[str, str]:
     env = dict(os.environ)
     env["LC_ALL"] = "C"
     env["LANG"] = "C"
+    # Ensure deterministic wrapper behavior even if the caller has a ripgrep rc file enabled.
+    # (e.g. `RIPGREP_CONFIG_PATH` containing `--quiet` would suppress match events.)
+    env.pop("RIPGREP_CONFIG_PATH", None)
     return env
 
 

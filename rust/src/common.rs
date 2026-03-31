@@ -72,6 +72,7 @@ pub fn cmd_capture(tool: &OsStr, args: &[OsString]) -> Result<Output> {
         .args(args)
         .env("LC_ALL", "C")
         .env("LANG", "C")
+        .env_remove("RIPGREP_CONFIG_PATH")
         .output()?;
     Ok(out)
 }

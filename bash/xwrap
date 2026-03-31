@@ -268,7 +268,7 @@ rg_x_filelist() {
 
   local -a out_rows=()
   local fifo pid tmpdir
-  if ! run_to_fifo rg -0 "$@"; then
+  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg -0 "$@"; then
     exec rg "$@"
   fi
   fifo="$RUN_FIFO"
@@ -384,7 +384,7 @@ rg_x_match() {
   }
 
   local fifo pid tmpdir
-  if ! run_to_fifo rg --color=never --null --no-heading --line-number --column "$@"; then
+  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --no-heading --line-number --column "$@"; then
     exec rg "$@"
   fi
   fifo="$RUN_FIFO"
