@@ -70,7 +70,7 @@ class TestLlmInspectPython(unittest.TestCase):
             for rel in ("a.txt", "dir/b.txt"):
                 self.assertIn(rel, by_path)
                 meta = by_path[rel]
-                self.assertEqual(meta["kind"], "file")
+                self.assertEqual(meta.get("kind", "file"), "file")
                 st = os.stat(root / rel)
                 self.assertEqual(int(meta["bytes"]), st.st_size)
                 self.assertEqual(int(meta["lines"]), (root / rel).read_text(encoding="utf-8").count("\n"))

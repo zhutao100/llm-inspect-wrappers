@@ -96,7 +96,11 @@ file_meta_row() {
     lines="-"
   fi
 
-  printf '%s\tkind=%s\tbytes=%s\tlines=%s\n' "$(escape_field "$p")" "$kind" "$bytes" "$lines"
+  if [[ "$kind" == "file" ]]; then
+    printf '%s\tbytes=%s\tlines=%s\n' "$(escape_field "$p")" "$bytes" "$lines"
+  else
+    printf '%s\tkind=%s\tbytes=%s\tlines=%s\n' "$(escape_field "$p")" "$kind" "$bytes" "$lines"
+  fi
 }
 
 
@@ -331,14 +335,14 @@ rg_x_match() {
 
       out_lines+=(
         "$(
-          printf '@file\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\thits=%s\tshown=%s\tomitted=%s' \
-            "$(escape_field "$current_path")" \
-            "$current_kind" \
-            "$current_bytes" \
-            "$current_lines" \
-            "$current_hits" \
-            "${#current_lines_out[@]}" \
-            "$current_omitted"
+          printf '@file\tpath=%s' "$(escape_field "$current_path")"
+          if [[ "$current_kind" != "file" ]]; then
+            printf '\tkind=%s' "$current_kind"
+          fi
+          printf '\tbytes=%s\tlines=%s' "$current_bytes" "$current_lines"
+          if (( current_omitted > 0 )); then
+            printf '\thits=%s\tshown=%s\tomitted=%s' "$current_hits" "${#current_lines_out[@]}" "$current_omitted"
+          fi
         )"
       )
       local ln
@@ -498,8 +502,9 @@ parse_sed_range_spec() {
 
   (( quiet == 1 )) || return 1
   [[ -n "$script" ]] || return 1
-  [[ -n "$file" ]] || return 1
-  [[ "$file" != "-" ]] || return 1
+  if [[ -z "$file" ]]; then
+    file="-"
+  fi
 
   if [[ "$script" =~ ^[[:space:]]*([0-9]+)[[:space:]]*,[[:space:]]*([0-9]+)[[:space:]]*p[[:space:]]*$ ]]; then
     local start="${BASH_REMATCH[1]}"
@@ -522,6 +527,59 @@ sed_x() {
 
   local start end file
   IFS=$'\t' read -r start end file <<<"$spec"
+
+  if [[ "$file" == "-" ]]; then
+    local truncated=0
+    local printed_lines=0
+    local printed_bytes=0
+    local line_no=0
+    local -a out_lines=()
+
+    while IFS= read -r line; do
+      line_no=$((line_no + 1))
+      if (( line_no < start )); then
+        continue
+      fi
+      if (( line_no > end )); then
+        break
+      fi
+
+      local kind_line
+      kind_line="$(classify_line_kind "$line")"
+      if [[ "$kind_line" == "plain" ]]; then
+        out_lines+=("$line")
+      else
+        truncated=$((truncated + 1))
+        out_lines+=("$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")")
+      fi
+    done
+
+    if (( ${#out_lines[@]} > 0 )); then
+      printf '%s\n' "${out_lines[@]}"
+    fi
+
+    printed_lines="${#out_lines[@]}"
+    local ln
+    for ln in "${out_lines[@]}"; do
+      printed_bytes=$((printed_bytes + ${#ln} + 1))
+    done
+
+    if (( truncated > 0 )); then
+      printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tprinted_lines=%s\tprinted_bytes=%s\ttruncated_lines=%s\n' \
+        "$start" \
+        "$end" \
+        "$printed_lines" \
+        "$printed_bytes" \
+        "$truncated"
+    else
+      printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tprinted_lines=%s\tprinted_bytes=%s\n' \
+        "$start" \
+        "$end" \
+        "$printed_lines" \
+        "$printed_bytes"
+    fi
+    return 0
+  fi
 
   local bytes="-" lines="-" kind="missing"
   if [[ -f "$file" ]]; then
@@ -578,14 +636,43 @@ sed_x() {
     printf '%s\n' "${out_lines[@]}"
   fi
 
-  printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
-    "$(escape_field "$file")" \
-    "$kind" \
-    "$bytes" \
-    "$lines" \
-    "$start" \
-    "$end" \
-    "$truncated"
+  if [[ "$kind" == "file" ]]; then
+    if (( truncated > 0 )); then
+      printf '@meta\ttool=sed-x\tpath=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
+        "$(escape_field "$file")" \
+        "$bytes" \
+        "$lines" \
+        "$start" \
+        "$end" \
+        "$truncated"
+    else
+      printf '@meta\ttool=sed-x\tpath=%s\tbytes=%s\tlines=%s\trange=%s..%s\n' \
+        "$(escape_field "$file")" \
+        "$bytes" \
+        "$lines" \
+        "$start" \
+        "$end"
+    fi
+  else
+    if (( truncated > 0 )); then
+      printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
+        "$(escape_field "$file")" \
+        "$kind" \
+        "$bytes" \
+        "$lines" \
+        "$start" \
+        "$end" \
+        "$truncated"
+    else
+      printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\n' \
+        "$(escape_field "$file")" \
+        "$kind" \
+        "$bytes" \
+        "$lines" \
+        "$start" \
+        "$end"
+    fi
+  fi
   return "$rc"
 }
 

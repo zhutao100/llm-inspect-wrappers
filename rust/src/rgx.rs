@@ -1,5 +1,6 @@
 use crate::common::{
     cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, replay_raw, strip_dot_slash, Config,
+    PathKind,
 };
 use crate::gate::render_maybe_gated_line;
 use anyhow::Result;
@@ -85,13 +86,17 @@ fn render_file_table(tool: &str, mode: Option<&str>, paths: Vec<PathBuf>, cfg: &
         let meta = path_meta(pb.as_path());
         let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
         let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
-        println!(
-            "{}\tkind={}\tbytes={}\tlines={}",
-            escape_field(&path_s),
-            meta.kind.as_str(),
-            bytes,
-            lines
-        );
+        if meta.kind == PathKind::File {
+            println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+        } else {
+            println!(
+                "{}\tkind={}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                meta.kind.as_str(),
+                bytes,
+                lines
+            );
+        }
     }
 
     let omitted = total.saturating_sub(shown);
@@ -265,16 +270,40 @@ pub fn run(args: &[OsString]) -> ExitCode {
         let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
 
         let path_s = strip_dot_slash(&p.to_string_lossy()).to_string();
-        println!(
-            "@file\tpath={}\tkind={}\tbytes={}\tlines={}\thits={}\tshown={}\tomitted={}",
-            escape_field(&path_s),
-            meta.kind.as_str(),
-            bytes,
-            lines,
-            g.hits,
-            g.shown_lines.len(),
-            g.omitted_lines
-        );
+        if g.omitted_lines > 0 {
+            if meta.kind == PathKind::File {
+                println!(
+                    "@file\tpath={}\tbytes={}\tlines={}\thits={}\tshown={}\tomitted={}",
+                    escape_field(&path_s),
+                    bytes,
+                    lines,
+                    g.hits,
+                    g.shown_lines.len(),
+                    g.omitted_lines
+                );
+            } else {
+                println!(
+                    "@file\tpath={}\tkind={}\tbytes={}\tlines={}\thits={}\tshown={}\tomitted={}",
+                    escape_field(&path_s),
+                    meta.kind.as_str(),
+                    bytes,
+                    lines,
+                    g.hits,
+                    g.shown_lines.len(),
+                    g.omitted_lines
+                );
+            }
+        } else if meta.kind == PathKind::File {
+            println!("@file\tpath={}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+        } else {
+            println!(
+                "@file\tpath={}\tkind={}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                meta.kind.as_str(),
+                bytes,
+                lines
+            );
+        }
 
         for ln in &g.shown_lines {
             println!("{}", ln);

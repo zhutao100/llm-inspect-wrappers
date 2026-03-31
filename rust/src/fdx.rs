@@ -1,4 +1,6 @@
-use crate::common::{cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, strip_dot_slash, Config};
+use crate::common::{
+    cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, strip_dot_slash, Config, PathKind,
+};
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -74,13 +76,17 @@ pub fn run(args: &[OsString]) -> ExitCode {
         let meta = path_meta(pb.as_path());
         let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
         let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
-        println!(
-            "{}\tkind={}\tbytes={}\tlines={}",
-            escape_field(&path_s),
-            meta.kind.as_str(),
-            bytes,
-            lines
-        );
+        if meta.kind == PathKind::File {
+            println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+        } else {
+            println!(
+                "{}\tkind={}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                meta.kind.as_str(),
+                bytes,
+                lines
+            );
+        }
     }
 
     let omitted = total.saturating_sub(shown);

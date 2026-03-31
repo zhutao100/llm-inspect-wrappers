@@ -75,7 +75,8 @@ class RgFileGroup:
 class SedRangeSpec:
     start: int
     end: int
-    path: str
+    source: str  # file | stdin
+    path: str | None = None
 
 
 RANGE_RE = re.compile(r"^\s*(\d+)\s*,\s*(\d+)\s*p\s*$")
@@ -245,7 +246,10 @@ def render_file_table(tool: str, paths: list[str], max_rows: int, mode: str | No
         meta = metas.get(p, FileMeta(kind="missing", bytes=None, lines=None))
         b = str(meta.bytes) if meta.bytes is not None else "-"
         l = str(meta.lines) if meta.lines is not None else "-"
-        out.append(f"{escape_field(p)}\tkind={meta.kind}\tbytes={b}\tlines={l}")
+        if meta.kind == "file":
+            out.append(f"{escape_field(p)}\tbytes={b}\tlines={l}")
+        else:
+            out.append(f"{escape_field(p)}\tkind={meta.kind}\tbytes={b}\tlines={l}")
 
     meta_fields = [f"@meta\ttool={tool}"]
     if mode is not None:
@@ -568,10 +572,18 @@ def main_rg_json(args: list[str]) -> int:
             meta = metas.get(p, FileMeta(kind="missing", bytes=None, lines=None))
             b = str(meta.bytes) if meta.bytes is not None else "-"
             l = str(meta.lines) if meta.lines is not None else "-"
-            out_lines.append(
-                f"@file\tpath={escape_field(p)}\tkind={meta.kind}\tbytes={b}\tlines={l}"
-                f"\thits={g.hits}\tshown={len(g.shown_lines)}\tomitted={g.omitted_lines}"
-            )
+            file_parts = [
+                f"@file\tpath={escape_field(p)}",
+                *(["kind=" + meta.kind] if meta.kind != "file" else []),
+                f"bytes={b}",
+                f"lines={l}",
+                *(
+                    [f"hits={g.hits}", f"shown={len(g.shown_lines)}", f"omitted={g.omitted_lines}"]
+                    if g.omitted_lines
+                    else []
+                ),
+            ]
+            out_lines.append("\t".join(file_parts))
             out_lines.extend(g.shown_lines)
             printed_match_lines += len(g.shown_lines)
             total_match_lines += len(g.shown_lines) + g.omitted_lines
@@ -645,7 +657,7 @@ def parse_sed_range_spec(args: list[str]) -> SedRangeSpec | None:
                 files.append(a)
         i += 1
 
-    if not quiet or script is None or len(files) != 1 or files[0] == "-":
+    if not quiet or script is None or len(files) > 1:
         return None
 
     m = RANGE_RE.fullmatch(script)
@@ -657,7 +669,9 @@ def parse_sed_range_spec(args: list[str]) -> SedRangeSpec | None:
     if start < 1 or end < start:
         return None
 
-    return SedRangeSpec(start=start, end=end, path=files[0])
+    if not files or files[0] == "-":
+        return SedRangeSpec(start=start, end=end, source="stdin")
+    return SedRangeSpec(start=start, end=end, source="file", path=files[0])
 
 
 def render_sed_line(lineno: int, raw: bytes) -> tuple[bytes, bool]:
@@ -685,27 +699,62 @@ def main_sed(args: list[str]) -> int:
         return passthrough([real, *args])
 
     try:
-        metas = collect_meta([spec.path])
-        meta = metas.get(spec.path, FileMeta(kind="missing", bytes=None, lines=None))
-        b = str(meta.bytes) if meta.bytes is not None else "-"
-        l = str(meta.lines) if meta.lines is not None else "-"
-
         truncated = 0
-        with open(spec.path, "rb") as f:
-            for lineno, raw in enumerate(f, start=1):
+        printed_lines = 0
+        printed_bytes = 0
+
+        if spec.source == "file":
+            if spec.path is None:
+                return passthrough([real, *args])
+
+            metas = collect_meta([spec.path])
+            meta = metas.get(spec.path, FileMeta(kind="missing", bytes=None, lines=None))
+            b = str(meta.bytes) if meta.bytes is not None else "-"
+            l = str(meta.lines) if meta.lines is not None else "-"
+
+            with open(spec.path, "rb") as f:
+                for lineno, raw in enumerate(f, start=1):
+                    if lineno < spec.start:
+                        continue
+                    if lineno > spec.end:
+                        break
+                    rendered, was_truncated = render_sed_line(lineno, raw)
+                    sys.stdout.buffer.write(rendered)
+                    printed_lines += 1
+                    printed_bytes += len(rendered)
+                    if was_truncated:
+                        truncated += 1
+
+            meta_parts = [
+                f"@meta\ttool=sed-x\tpath={escape_field(spec.path)}",
+                *(["kind=" + meta.kind] if meta.kind != "file" else []),
+                f"bytes={b}",
+                f"lines={l}",
+                f"range={spec.start}..{spec.end}",
+                *(["truncated_lines=" + str(truncated)] if truncated else []),
+            ]
+            sys.stdout.write("\t".join(meta_parts) + "\n")
+        else:
+            for lineno, raw in enumerate(sys.stdin.buffer, start=1):
                 if lineno < spec.start:
                     continue
                 if lineno > spec.end:
                     break
                 rendered, was_truncated = render_sed_line(lineno, raw)
                 sys.stdout.buffer.write(rendered)
+                printed_lines += 1
+                printed_bytes += len(rendered)
                 if was_truncated:
                     truncated += 1
 
-        sys.stdout.write(
-            f"@meta\ttool=sed-x\tpath={escape_field(spec.path)}\tkind={meta.kind}\tbytes={b}\tlines={l}"
-            f"\trange={spec.start}..{spec.end}\ttruncated_lines={truncated}\n"
-        )
+            meta_parts = [
+                "@meta\ttool=sed-x\tsource=stdin",
+                f"range={spec.start}..{spec.end}",
+                f"printed_lines={printed_lines}",
+                f"printed_bytes={printed_bytes}",
+                *(["truncated_lines=" + str(truncated)] if truncated else []),
+            ]
+            sys.stdout.write("\t".join(meta_parts) + "\n")
         return 0
     except Exception:
         return passthrough([real, *args])

@@ -86,7 +86,13 @@ class Impl:
     name: str
     argv_prefix: list[str]
 
-    def run(self, *args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def run(
+        self,
+        *args: str,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+        stdin: str = "",
+    ) -> subprocess.CompletedProcess[str]:
         merged_env = None
         if env is not None:
             merged_env = dict(os.environ)
@@ -95,7 +101,7 @@ class Impl:
             [*self.argv_prefix, *args],
             cwd=str(cwd),
             env=merged_env,
-            input="",
+            input=stdin,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -147,7 +153,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 expected_lines = (root / rel).read_text(encoding="utf-8").count("\n")
                 for impl in self.impls:
                     row = results[impl.name][rel]
-                    self.assertEqual(row["kind"], "file")
+                    self.assertEqual(row.get("kind", "file"), "file")
                     self.assertEqual(int(row["bytes"]), expected_bytes)
                     self.assertEqual(int(row["lines"]), expected_lines)
 
@@ -225,7 +231,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                     cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
                     rows, _ = parse_file_table(cp.stdout)
                     row = rows[rel]
-                    self.assertEqual(row["kind"], "file")
+                    self.assertEqual(row.get("kind", "file"), "file")
                     self.assertEqual(int(row["bytes"]), expected_bytes)
                     self.assertEqual(int(row["lines"]), expected_lines)
 
@@ -239,3 +245,16 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("sed-x truncated line=1", cp.stdout)
                 self.assertIn("@meta\ttool=sed-x\tpath=long.json", cp.stdout)
+
+    def test_sed_x_stdin_range_read_consistent(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            long_line = ("x" * 3000) + "\n"
+
+            for impl in self.impls:
+                cp = impl.run("sed-x", "-n", "1,1p", cwd=root, stdin=long_line)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertIn("sed-x truncated line=1", cp.stdout)
+                self.assertIn("@meta\ttool=sed-x\tsource=stdin", cp.stdout)
+                self.assertIn("printed_lines=1", cp.stdout)
+                self.assertIn("truncated_lines=1", cp.stdout)

@@ -7,10 +7,16 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Debug, Clone)]
+enum SedInput {
+    File(PathBuf),
+    Stdin,
+}
+
+#[derive(Debug, Clone)]
 struct SedRangeSpec {
     start: u64,
     end: u64,
-    file: PathBuf,
+    input: SedInput,
 }
 
 fn parse_sed_range_spec(args: &[OsString]) -> Option<SedRangeSpec> {
@@ -58,10 +64,7 @@ fn parse_sed_range_spec(args: &[OsString]) -> Option<SedRangeSpec> {
         return None;
     }
     let script = script?;
-    if files.len() != 1 {
-        return None;
-    }
-    if files[0] == "-" {
+    if files.len() > 1 {
         return None;
     }
 
@@ -77,11 +80,13 @@ fn parse_sed_range_spec(args: &[OsString]) -> Option<SedRangeSpec> {
         return None;
     }
 
-    Some(SedRangeSpec {
-        start,
-        end,
-        file: PathBuf::from(files.remove(0)),
-    })
+    let input = if files.is_empty() || files[0] == "-" {
+        SedInput::Stdin
+    } else {
+        SedInput::File(PathBuf::from(files.remove(0)))
+    };
+
+    Some(SedRangeSpec { start, end, input })
 }
 
 pub fn run(args: &[OsString]) -> ExitCode {
@@ -92,17 +97,24 @@ pub fn run(args: &[OsString]) -> ExitCode {
         return cmd_passthrough(tool, args);
     };
 
-    let f = match File::open(&spec.file) {
-        Ok(f) => f,
-        Err(_) => return cmd_passthrough(tool, args),
-    };
-
     let mut out = std::io::stdout().lock();
-    let mut r = BufReader::new(f);
 
     let mut buf: Vec<u8> = Vec::new();
     let mut lineno: u64 = 0;
     let mut truncated: u64 = 0;
+    let mut printed_lines: u64 = 0;
+    let mut printed_bytes: u64 = 0;
+
+    let mut r: Box<dyn BufRead> = match &spec.input {
+        SedInput::File(p) => {
+            let f = match File::open(p) {
+                Ok(f) => f,
+                Err(_) => return cmd_passthrough(tool, args),
+            };
+            Box::new(BufReader::new(f))
+        }
+        SedInput::Stdin => Box::new(BufReader::new(std::io::stdin().lock())),
+    };
 
     while {
         buf.clear();
@@ -130,26 +142,87 @@ pub fn run(args: &[OsString]) -> ExitCode {
             let marker = truncated_marker(&format!("sed-x truncated line={}", lineno), &buf, kind, &cfg);
             let _ = out.write_all(marker.as_bytes());
             let _ = out.write_all(b"\n");
+            printed_lines += 1;
+            printed_bytes += marker.as_bytes().len() as u64 + 1;
         } else {
             let _ = out.write_all(&buf);
+            printed_lines += 1;
+            printed_bytes += buf.len() as u64;
         }
     }
 
-    let meta = path_meta(&spec.file);
-    let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
-    let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+    match &spec.input {
+        SedInput::File(p) => {
+            let meta = path_meta(p);
+            let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
+            let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
 
-    let path_s = strip_dot_slash(&spec.file.to_string_lossy()).to_string();
-    println!(
-        "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
-        escape_field(&path_s),
-        meta.kind.as_str(),
-        bytes,
-        lines,
-        spec.start,
-        spec.end,
-        truncated
-    );
+            let path_s = strip_dot_slash(&p.to_string_lossy()).to_string();
+            if truncated > 0 {
+                if meta.kind == crate::common::PathKind::File {
+                    println!(
+                        "@meta\ttool=sed-x\tpath={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
+                        escape_field(&path_s),
+                        bytes,
+                        lines,
+                        spec.start,
+                        spec.end,
+                        truncated
+                    );
+                } else {
+                    println!(
+                        "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
+                        escape_field(&path_s),
+                        meta.kind.as_str(),
+                        bytes,
+                        lines,
+                        spec.start,
+                        spec.end,
+                        truncated
+                    );
+                }
+            } else if meta.kind == crate::common::PathKind::File {
+                println!(
+                    "@meta\ttool=sed-x\tpath={}\tbytes={}\tlines={}\trange={}..{}",
+                    escape_field(&path_s),
+                    bytes,
+                    lines,
+                    spec.start,
+                    spec.end
+                );
+            } else {
+                println!(
+                    "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}",
+                    escape_field(&path_s),
+                    meta.kind.as_str(),
+                    bytes,
+                    lines,
+                    spec.start,
+                    spec.end
+                );
+            }
+        }
+        SedInput::Stdin => {
+            if truncated > 0 {
+                println!(
+                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tprinted_lines={}\tprinted_bytes={}\ttruncated_lines={}",
+                    spec.start,
+                    spec.end,
+                    printed_lines,
+                    printed_bytes,
+                    truncated
+                );
+            } else {
+                println!(
+                    "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tprinted_lines={}\tprinted_bytes={}",
+                    spec.start,
+                    spec.end,
+                    printed_lines,
+                    printed_bytes
+                );
+            }
+        }
+    }
 
     ExitCode::SUCCESS
 }
@@ -168,6 +241,9 @@ mod tests {
         let spec = parse_sed_range_spec(&args).unwrap();
         assert_eq!(spec.start, 10);
         assert_eq!(spec.end, 20);
-        assert_eq!(spec.file, PathBuf::from("file.txt"));
+        match spec.input {
+            SedInput::File(p) => assert_eq!(p, PathBuf::from("file.txt")),
+            SedInput::Stdin => panic!("expected file"),
+        }
     }
 }
