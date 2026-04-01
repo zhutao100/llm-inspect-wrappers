@@ -70,7 +70,14 @@ pub fn should_gate_line(raw: &[u8], cfg: &Config) -> (bool, LineKind) {
     let kind = classify_line(raw, cfg);
 
     if raw.len() > cfg.hard_line_chars {
-        return (true, if kind == LineKind::Plain { LineKind::Long } else { kind });
+        return (
+            true,
+            if kind == LineKind::Plain {
+                LineKind::Long
+            } else {
+                kind
+            },
+        );
     }
 
     if raw.len() > cfg.soft_line_chars && kind != LineKind::Plain {
@@ -97,7 +104,10 @@ fn trim_line_endings(raw: &[u8]) -> &[u8] {
 pub fn truncated_marker(prefix: &str, raw: &[u8], kind: LineKind, cfg: &Config) -> String {
     let head = safe_preview_bytes(raw, cfg.head_chars);
     let tail = if raw.len() > cfg.head_chars && cfg.tail_chars > 0 {
-        safe_preview_bytes(&raw[raw.len().saturating_sub(cfg.tail_chars)..], cfg.tail_chars)
+        safe_preview_bytes(
+            &raw[raw.len().saturating_sub(cfg.tail_chars)..],
+            cfg.tail_chars,
+        )
     } else {
         String::new()
     };

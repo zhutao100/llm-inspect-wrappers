@@ -1,5 +1,6 @@
 use crate::common::{
-    cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, strip_dot_slash, Config, PathKind,
+    cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, strip_dot_slash,
+    Config, PathKind,
 };
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
@@ -66,24 +67,14 @@ fn fd_x_supported(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "-0"
-            | "--print0"
-            | "-l"
-            | "--list-details"
-            | "-h"
-            | "--help"
-            | "-V"
-            | "--version"
-            | "-x"
-            | "-X"
-            | "--exec"
-            | "--exec-batch"
-            | "--format" => {
+            "-0" | "--print0" | "-l" | "--list-details" | "-h" | "--help" | "-V" | "--version"
+            | "-x" | "-X" | "--exec" | "--exec-batch" | "--format" => {
                 return false;
             }
             _ => {}
         }
-        if s.starts_with("--format=") || s.starts_with("--exec=") || s.starts_with("--exec-batch=") {
+        if s.starts_with("--format=") || s.starts_with("--exec=") || s.starts_with("--exec-batch=")
+        {
             return false;
         }
     }
@@ -136,17 +127,31 @@ pub fn run(args: &[OsString]) -> ExitCode {
     let shown = rows.len().min(cfg.max_fd_rows);
     for (path_s, pb) in rows.into_iter().take(shown) {
         let meta = path_meta(pb.as_path());
-        let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
-        let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+        let bytes = meta
+            .bytes
+            .map(|b| b.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let lines = meta
+            .lines
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "-".to_string());
         if meta.kind == PathKind::File {
-            println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+            println!(
+                "{}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                bytes,
+                lines
+            );
         } else {
             println!("{}", escape_field(&path_s));
         }
     }
 
     let omitted = total.saturating_sub(shown);
-    println!("@meta\ttool=fd-x\ttotal={}\tprinted={}\tomitted={}", total, shown, omitted);
+    println!(
+        "@meta\ttool=fd-x\ttotal={}\tprinted={}\tomitted={}",
+        total, shown, omitted
+    );
 
     eprint!("{}", String::from_utf8_lossy(&out.stderr));
     exit_code_from_status(out.status)

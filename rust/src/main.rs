@@ -28,7 +28,10 @@ fn mode_from_argv0(argv0: &OsString) -> Option<Mode> {
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = env::args_os().collect();
-    let argv0 = args.first().cloned().unwrap_or_else(|| OsString::from("fd-x"));
+    let argv0 = args
+        .first()
+        .cloned()
+        .unwrap_or_else(|| OsString::from("fd-x"));
 
     // Dispatch by symlink name (preferred), or by explicit subcommand:
     //   llm-inspect-wrappers fd-x ...

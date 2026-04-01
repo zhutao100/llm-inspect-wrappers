@@ -65,7 +65,10 @@ git_add_with_retry() {
     echo "${out}" >&2
     return 1
   done
-  out="$(git add -- "${files[@]}" 2>&1)" || { echo "${out}" >&2; return 1; }
+  out="$(git add -- "${files[@]}" 2>&1)" || {
+    echo "${out}" >&2
+    return 1
+  }
 }
 
 unstaged_changes_in_staged_set() {

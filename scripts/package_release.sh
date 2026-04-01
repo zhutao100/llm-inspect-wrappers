@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
       out_dir="${2-}"
       shift 2
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$only" in
-  all|scripts|rust) ;;
+  all | scripts | rust) ;;
   *)
     echo "error: --only must be one of: all|scripts|rust" >&2
     exit 2

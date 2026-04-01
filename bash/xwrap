@@ -29,7 +29,6 @@ TAIL_CHARS="${LLM_X_TAIL_CHARS:-80}"
 SEDX_STDIN_MAX_LINES="${LLM_X_SEDX_STDIN_MAX_LINES:-200000}"
 SEDX_STDIN_MAX_BYTES="${LLM_X_SEDX_STDIN_MAX_BYTES:-10000000}"
 
-
 escape_field() {
   local s="${1-}"
   s="${s//\\/\\\\}"
@@ -68,7 +67,6 @@ run_to_fifo() {
   return 0
 }
 
-
 file_meta_row() {
   local p="${1-}"
   local kind bytes lines
@@ -78,7 +76,7 @@ file_meta_row() {
     bytes="-"
     lines="-"
     local wc_out
-    if wc_out="$(wc -c -l < "$p" 2>/dev/null)"; then
+    if wc_out="$(wc -c -l <"$p" 2>/dev/null)"; then
       # `wc -c -l < file` prints: "<lines> <bytes>"
       read -r lines bytes <<<"$wc_out"
     fi
@@ -107,13 +105,12 @@ file_meta_row() {
   fi
 }
 
-
 classify_line_kind() {
   # echo one of: plain | long | json | base64
   local line="${1-}"
   local len=${#line}
 
-  if (( len <= SOFT_LINE_CHARS )); then
+  if ((len <= SOFT_LINE_CHARS)); then
     printf 'plain'
     return 0
   fi
@@ -130,14 +127,13 @@ classify_line_kind() {
     return 0
   fi
 
-  if (( len > HARD_LINE_CHARS )); then
+  if ((len > HARD_LINE_CHARS)); then
     printf 'long'
     return 0
   fi
 
   printf 'plain'
 }
-
 
 truncated_marker() {
   local prefix="${1-}"
@@ -147,7 +143,7 @@ truncated_marker() {
   local len=${#line}
   local head="${line:0:HEAD_CHARS}"
   local tail=""
-  if (( len > HEAD_CHARS )); then
+  if ((len > HEAD_CHARS)); then
     tail="${line: -TAIL_CHARS}"
   fi
 
@@ -158,7 +154,6 @@ truncated_marker() {
     "$(escape_field "$head")" \
     "$(escape_field "$tail")"
 }
-
 
 render_maybe_gated_line() {
   # prints a single-line representation of $1 (no trailing newline)
@@ -174,14 +169,13 @@ render_maybe_gated_line() {
   printf '%s' "$(truncated_marker "rg-x truncated" "$line" "$kind")"
 }
 
-
 fd_x_supported() {
   for a in "$@"; do
     case "$a" in
-      -h|--help|-V|--version)
+      -h | --help | -V | --version)
         return 1
         ;;
-      -0|--print0|-l|--list-details|-x|-X|--exec|--exec-batch|--format|--format=*|--exec=*|--exec-batch=*)
+      -0 | --print0 | -l | --list-details | -x | -X | --exec | --exec-batch | --format | --format=* | --exec=* | --exec-batch=*)
         return 1
         ;;
     esac
@@ -193,11 +187,11 @@ fd_strip_color_args() {
   # Print NUL-separated args with any -c/--color flags removed (only before "--").
   local after_end_of_options=0
 
-  while (( $# )); do
+  while (($#)); do
     local a="$1"
     shift
 
-    if (( after_end_of_options )); then
+    if ((after_end_of_options)); then
       printf '%s\0' "$a"
       continue
     fi
@@ -220,7 +214,6 @@ fd_strip_color_args() {
     printf '%s\0' "$a"
   done
 }
-
 
 fd_x() {
   local -a argv=()
@@ -249,7 +242,7 @@ fd_x() {
     p="${p#./}"
     total=$((total + 1))
 
-    if (( printed < MAX_FD_ROWS )); then
+    if ((printed < MAX_FD_ROWS)); then
       printed=$((printed + 1))
       out_rows+=("$(file_meta_row "$p")")
     fi
@@ -259,11 +252,11 @@ fd_x() {
   local rc=$?
   rm -rf "$tmpdir"
 
-  if (( rc != 0 )); then
+  if ((rc != 0)); then
     exec fd --color=never "${argv[@]}"
   fi
 
-  if (( ${#out_rows[@]} > 0 )); then
+  if ((${#out_rows[@]} > 0)); then
     printf '%s\n' "${out_rows[@]}"
   fi
   local omitted=$((total - printed))
@@ -271,13 +264,12 @@ fd_x() {
   return "$rc"
 }
 
-
 rg_should_passthrough() {
   for a in "$@"; do
     case "$a" in
-      --json|--passthru|--vimgrep|--null|-0|-c|--count|--count-matches|-o|--only-matching|-r|--replace|--replace=*|\
-      -A|-B|-C|--after-context|--before-context|--context|--after-context=*|--before-context=*|--context=*|\
-      --heading|--no-heading|--no-line-number|--no-column|--with-filename|--no-filename|-H|-h)
+      --json | --passthru | --vimgrep | --null | -0 | -c | --count | --count-matches | -o | --only-matching | -r | --replace | --replace=* | \
+        -A | -B | -C | --after-context | --before-context | --context | --after-context=* | --before-context=* | --context=* | \
+        --heading | --no-heading | --no-line-number | --no-column | --with-filename | --no-filename | -H | -h)
         return 0
         ;;
       -*) # conservative: avoid parsing context/replace/count/only-matching bundles
@@ -293,11 +285,10 @@ rg_should_passthrough() {
   return 1
 }
 
-
 rg_is_filelist_mode() {
   for a in "$@"; do
     case "$a" in
-      --files|-l|--files-with-matches|-L|--files-without-match)
+      --files | -l | --files-with-matches | -L | --files-without-match)
         return 0
         ;;
       -*)
@@ -314,11 +305,11 @@ rg_strip_color_args() {
   # Print NUL-separated args with any --color flags removed (only before "--").
   local after_end_of_options=0
 
-  while (( $# )); do
+  while (($#)); do
     local a="$1"
     shift
 
-    if (( after_end_of_options )); then
+    if ((after_end_of_options)); then
       printf '%s\0' "$a"
       continue
     fi
@@ -342,7 +333,6 @@ rg_strip_color_args() {
   done
 }
 
-
 rg_x_filelist() {
   local total=0
   local printed=0
@@ -360,7 +350,7 @@ rg_x_filelist() {
     p="${p#./}"
     total=$((total + 1))
 
-    if (( printed < MAX_FD_ROWS )); then
+    if ((printed < MAX_FD_ROWS)); then
       printed=$((printed + 1))
       out_rows+=("$(file_meta_row "$p")")
     fi
@@ -370,18 +360,17 @@ rg_x_filelist() {
   local rc=$?
   rm -rf "$tmpdir"
 
-  if (( rc == 2 )); then
+  if ((rc == 2)); then
     exec rg --color=never "$@"
   fi
 
-  if (( ${#out_rows[@]} > 0 )); then
+  if ((${#out_rows[@]} > 0)); then
     printf '%s\n' "${out_rows[@]}"
   fi
   local omitted=$((total - printed))
   printf '@meta\ttool=rg-x\tmode=filelist\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
   return "$rc"
 }
-
 
 rg_x_match() {
   local files_seen=0
@@ -410,7 +399,7 @@ rg_x_match() {
     files_seen=$((files_seen + 1))
     match_lines_total=$((match_lines_total + current_hits))
 
-    if (( files_printed < max_files_cap )); then
+    if ((files_printed < max_files_cap)); then
       files_printed=$((files_printed + 1))
 
       out_lines+=(
@@ -420,7 +409,7 @@ rg_x_match() {
             printf '\tkind=%s' "$current_kind"
           fi
           printf '\tbytes=%s\tlines=%s' "$current_bytes" "$current_lines"
-          if (( current_omitted > 0 )); then
+          if ((current_omitted > 0)); then
             printf '\tmatch_lines=%s\tshown=%s\tomitted=%s' "$current_hits" "${#current_lines_out[@]}" "$current_omitted"
           fi
         )"
@@ -453,7 +442,7 @@ rg_x_match() {
     if [[ -f "$p" ]]; then
       current_kind="file"
       local wc_out
-      if wc_out="$(wc -c -l < "$p" 2>/dev/null)"; then
+      if wc_out="$(wc -c -l <"$p" 2>/dev/null)"; then
         read -r current_lines current_bytes <<<"$wc_out"
       fi
     elif [[ -d "$p" ]]; then
@@ -478,7 +467,7 @@ rg_x_match() {
 
     current_hits=$((current_hits + 1))
 
-    if (( ${#current_lines_out[@]} < max_lines_cap )); then
+    if ((${#current_lines_out[@]} < max_lines_cap)); then
       local line_no col_no text rest2 rendered
       line_no="${rest%%:*}"
       rest2="${rest#*:}"
@@ -512,15 +501,15 @@ rg_x_match() {
 
     p="${p#./}"
 
-    if (( buffering )); then
+    if ((buffering)); then
       buf_paths+=("$p")
       buf_rests+=("$rest")
       buffered=$((buffered + 1))
 
-      if (( buffered > MAX_RG_NO_OMIT_MATCH_LINES )); then
+      if ((buffered > MAX_RG_NO_OMIT_MATCH_LINES)); then
         buffering=0
         local i
-        for (( i = 0; i < ${#buf_paths[@]}; i++ )); do
+        for ((i = 0; i < ${#buf_paths[@]}; i++)); do
           consume_event "${buf_paths[$i]}" "${buf_rests[$i]}"
         done
         buf_paths=()
@@ -536,22 +525,22 @@ rg_x_match() {
   local rc=$?
   rm -rf "$tmpdir"
 
-  if (( rc == 2 )); then
+  if ((rc == 2)); then
     exec rg --color=never "$@"
   fi
 
-  if (( buffering )); then
+  if ((buffering)); then
     max_files_cap=2000000000
     max_lines_cap=2000000000
     local i
-    for (( i = 0; i < ${#buf_paths[@]}; i++ )); do
+    for ((i = 0; i < ${#buf_paths[@]}; i++)); do
       consume_event "${buf_paths[$i]}" "${buf_rests[$i]}"
     done
   fi
 
   flush_current
 
-  if (( ${#out_lines[@]} > 0 )); then
+  if ((${#out_lines[@]} > 0)); then
     printf '%s\n' "${out_lines[@]}"
   fi
 
@@ -565,7 +554,6 @@ rg_x_match() {
 
   return "$rc"
 }
-
 
 rg_x() {
   local -a argv=()
@@ -586,7 +574,6 @@ rg_x() {
   rg_x_match "${argv[@]}"
 }
 
-
 parse_sed_range_spec() {
   # echoes: "<start>\t<end>\t<file>" on success
   local -a argv=("$@")
@@ -596,13 +583,13 @@ parse_sed_range_spec() {
   local file=""
 
   local i=0
-  while (( i < ${#argv[@]} )); do
+  while ((i < ${#argv[@]})); do
     local a="${argv[$i]}"
     if [[ "$a" == "-n" ]]; then
       quiet=1
     elif [[ "$a" == "-e" ]]; then
       i=$((i + 1))
-      (( i < ${#argv[@]} )) || return 1
+      ((i < ${#argv[@]})) || return 1
       [[ -z "$script" ]] || return 1
       script="${argv[$i]}"
     elif [[ "$a" == -e* ]]; then
@@ -622,7 +609,7 @@ parse_sed_range_spec() {
     i=$((i + 1))
   done
 
-  (( quiet == 1 )) || return 1
+  ((quiet == 1)) || return 1
   [[ -n "$script" ]] || return 1
   if [[ -z "$file" ]]; then
     file="-"
@@ -631,15 +618,14 @@ parse_sed_range_spec() {
   if [[ "$script" =~ ^[[:space:]]*([0-9]+)[[:space:]]*,[[:space:]]*([0-9]+)[[:space:]]*p[[:space:]]*$ ]]; then
     local start="${BASH_REMATCH[1]}"
     local end="${BASH_REMATCH[2]}"
-    (( start >= 1 )) || return 1
-    (( end >= start )) || return 1
+    ((start >= 1)) || return 1
+    ((end >= start)) || return 1
     printf '%s\t%s\t%s' "$start" "$end" "$file"
     return 0
   fi
 
   return 1
 }
-
 
 sed_x() {
   local spec
@@ -665,18 +651,18 @@ sed_x() {
       local line rc add_nl kind_line
       IFS= read -r line
       rc=$?
-      if (( rc != 0 )); then
+      if ((rc != 0)); then
         [[ -n "$line" ]] || break
       fi
 
       line_no=$((line_no + 1))
       add_nl=0
-      if (( rc == 0 )); then
+      if ((rc == 0)); then
         add_nl=1
       fi
       total_bytes=$((total_bytes + ${#line} + add_nl))
 
-      if (( line_no >= start && line_no <= end )); then
+      if ((line_no >= start && line_no <= end)); then
         kind_line="$(classify_line_kind "$line")"
         if [[ "$kind_line" == "plain" ]]; then
           printf '%s\n' "$line"
@@ -686,14 +672,14 @@ sed_x() {
         fi
       fi
 
-      if (( is_tty == 1 && line_no >= end )); then
+      if ((is_tty == 1 && line_no >= end)); then
         complete=0
         reason="tty"
         break
       fi
 
-      if (( is_tty == 0 && line_no >= end )); then
-        if (( line_no >= SEDX_STDIN_MAX_LINES || total_bytes >= SEDX_STDIN_MAX_BYTES )); then
+      if ((is_tty == 0 && line_no >= end)); then
+        if ((line_no >= SEDX_STDIN_MAX_LINES || total_bytes >= SEDX_STDIN_MAX_BYTES)); then
           complete=0
           reason="cap"
           break
@@ -710,7 +696,7 @@ sed_x() {
     if [[ -n "$reason" ]]; then
       printf '\treason=%s' "$reason"
     fi
-    if (( truncated > 0 )); then
+    if ((truncated > 0)); then
       printf '\ttruncated_lines=%s' "$truncated"
     fi
     printf '\n'
@@ -721,7 +707,7 @@ sed_x() {
   if [[ -f "$file" ]]; then
     kind="file"
     local wc_out
-    if wc_out="$(wc -c -l < "$file" 2>/dev/null)"; then
+    if wc_out="$(wc -c -l <"$file" 2>/dev/null)"; then
       read -r lines bytes <<<"$wc_out"
     fi
   elif [[ -d "$file" ]]; then
@@ -764,16 +750,16 @@ sed_x() {
   local rc=$?
   rm -rf "$tmpdir"
 
-  if (( rc != 0 )); then
+  if ((rc != 0)); then
     exec sed "$@"
   fi
 
-  if (( ${#out_lines[@]} > 0 )); then
+  if ((${#out_lines[@]} > 0)); then
     printf '%s\n' "${out_lines[@]}"
   fi
 
   if [[ "$kind" == "file" ]]; then
-    if (( truncated > 0 )); then
+    if ((truncated > 0)); then
       printf '@meta\ttool=sed-x\tpath=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
         "$(escape_field "$file")" \
         "$bytes" \
@@ -790,7 +776,7 @@ sed_x() {
         "$end"
     fi
   else
-    if (( truncated > 0 )); then
+    if ((truncated > 0)); then
       printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\ttruncated_lines=%s\n' \
         "$(escape_field "$file")" \
         "$kind" \
@@ -812,7 +798,6 @@ sed_x() {
   return "$rc"
 }
 
-
 dispatch() {
   local argv0="${0##*/}"
 
@@ -820,13 +805,13 @@ dispatch() {
     fd-x) fd_x "$@" ;;
     rg-x) rg_x "$@" ;;
     sed-x) sed_x "$@" ;;
-    xwrap|xwrap.sh|xwrap.bash|xwrap.bash.sh|xwrap.bashscript|xwrap_script|xwrap-script|xwrap-wrapper|xwrap_wrapper)
+    xwrap | xwrap.sh | xwrap.bash | xwrap.bash.sh | xwrap.bashscript | xwrap_script | xwrap-script | xwrap-wrapper | xwrap_wrapper)
       local sub="${1-}"
       shift 2>/dev/null || true
       case "$sub" in
-        fd-x|fd) fd_x "$@" ;;
-        rg-x|rg) rg_x "$@" ;;
-        sed-x|sed) sed_x "$@" ;;
+        fd-x | fd) fd_x "$@" ;;
+        rg-x | rg) rg_x "$@" ;;
+        sed-x | sed) sed_x "$@" ;;
         *)
           printf 'usage: %s {fd-x|rg-x|sed-x} [args...]\n' "$argv0" >&2
           return 2
@@ -839,6 +824,5 @@ dispatch() {
       ;;
   esac
 }
-
 
 dispatch "$@"

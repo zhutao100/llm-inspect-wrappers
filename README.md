@@ -80,6 +80,8 @@ python3 -m unittest discover -s tests -q
 
 This repo uses `prek` to run `.pre-commit-config.yaml`. The committed `.githooks/pre-commit` is a self-healing shim that re-runs `prek run` and auto-stages fixes until the staged set converges.
 
+This repo uses prek **workspace mode**: additional configs live under `bash/.pre-commit-config.yaml` and `rust/.pre-commit-config.yaml` (see `prek list`).
+
 One-time setup:
 
 ```bash

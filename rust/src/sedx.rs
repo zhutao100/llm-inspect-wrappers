@@ -146,7 +146,12 @@ pub fn run(args: &[OsString]) -> ExitCode {
 
         if gate || kind == LineKind::Binary {
             truncated += 1;
-            let marker = truncated_marker(&format!("sed-x truncated line={}", lineno), &buf, kind, &cfg);
+            let marker = truncated_marker(
+                &format!("sed-x truncated line={}", lineno),
+                &buf,
+                kind,
+                &cfg,
+            );
             let _ = out.write_all(marker.as_bytes());
             let _ = out.write_all(b"\n");
         } else {
@@ -185,8 +190,14 @@ pub fn run(args: &[OsString]) -> ExitCode {
     match &spec.input {
         SedInput::File(p) => {
             let meta = path_meta(p);
-            let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
-            let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+            let bytes = meta
+                .bytes
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let lines = meta
+                .lines
+                .map(|l| l.to_string())
+                .unwrap_or_else(|| "-".to_string());
 
             let path_s = strip_dot_slash(&p.to_string_lossy()).to_string();
             if truncated > 0 {

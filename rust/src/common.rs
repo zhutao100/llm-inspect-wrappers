@@ -38,7 +38,10 @@ impl Config {
 }
 
 fn env_usize(key: &str, default: usize) -> usize {
-    env::var(key).ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(default)
+    env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(default)
 }
 
 pub fn strip_dot_slash(s: &str) -> &str {

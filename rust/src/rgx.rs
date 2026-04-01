@@ -1,6 +1,6 @@
 use crate::common::{
-    cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, replay_raw, strip_dot_slash, Config,
-    PathKind,
+    cmd_capture, cmd_passthrough, escape_field, exit_code_from_status, path_meta, replay_raw,
+    strip_dot_slash, Config, PathKind,
 };
 use crate::gate::render_maybe_gated_line;
 use anyhow::Result;
@@ -71,9 +71,9 @@ fn rg_should_passthrough(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "--json" | "--passthru" | "--vimgrep" | "--null" | "-0" | "-c" | "--count" | "--count-matches" | "-o"
-            | "--only-matching" | "-r" | "--replace" | "-A" | "-B" | "-C" | "--after-context" | "--before-context"
-            | "--context" => return true,
+            "--json" | "--passthru" | "--vimgrep" | "--null" | "-0" | "-c" | "--count"
+            | "--count-matches" | "-o" | "--only-matching" | "-r" | "--replace" | "-A" | "-B"
+            | "-C" | "--after-context" | "--before-context" | "--context" => return true,
             _ => {}
         }
         if s.starts_with("--replace=")
@@ -83,10 +83,16 @@ fn rg_should_passthrough(args: &[OsString]) -> bool {
         {
             return true;
         }
-        if s.starts_with('-') && !s.starts_with("--") {
-            if s.contains('0') || s.contains('c') || s.contains('o') || s.contains('A') || s.contains('B') || s.contains('C') {
-                return true;
-            }
+        if s.starts_with('-')
+            && !s.starts_with("--")
+            && (s.contains('0')
+                || s.contains('c')
+                || s.contains('o')
+                || s.contains('A')
+                || s.contains('B')
+                || s.contains('C'))
+        {
+            return true;
         }
     }
     false
@@ -96,19 +102,25 @@ fn rg_is_filelist_mode(args: &[OsString]) -> bool {
     for a in args {
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "--files" | "-l" | "--files-with-matches" | "-L" | "--files-without-match" => return true,
+            "--files" | "-l" | "--files-with-matches" | "-L" | "--files-without-match" => {
+                return true
+            }
             _ => {}
         }
-        if s.starts_with('-') && !s.starts_with("--") {
-            if s.contains('l') || s.contains('L') {
-                return true;
-            }
+        if s.starts_with('-') && !s.starts_with("--") && (s.contains('l') || s.contains('L')) {
+            return true;
         }
     }
     false
 }
 
-fn render_file_table(tool: &str, mode: Option<&str>, paths: Vec<PathBuf>, cfg: &Config, status: ExitCode) -> ExitCode {
+fn render_file_table(
+    tool: &str,
+    mode: Option<&str>,
+    paths: Vec<PathBuf>,
+    cfg: &Config,
+    status: ExitCode,
+) -> ExitCode {
     let total = paths.len();
     let mut rows: Vec<(String, PathBuf)> = paths
         .into_iter()
@@ -122,10 +134,21 @@ fn render_file_table(tool: &str, mode: Option<&str>, paths: Vec<PathBuf>, cfg: &
     let shown = rows.len().min(cfg.max_fd_rows);
     for (path_s, pb) in rows.into_iter().take(shown) {
         let meta = path_meta(pb.as_path());
-        let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
-        let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+        let bytes = meta
+            .bytes
+            .map(|b| b.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let lines = meta
+            .lines
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "-".to_string());
         if meta.kind == PathKind::File {
-            println!("{}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+            println!(
+                "{}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                bytes,
+                lines
+            );
         } else {
             println!("{}", escape_field(&path_s));
         }
@@ -138,7 +161,10 @@ fn render_file_table(tool: &str, mode: Option<&str>, paths: Vec<PathBuf>, cfg: &
             tool, mode, total, shown, omitted
         );
     } else {
-        println!("@meta\ttool={}\ttotal={}\tprinted={}\tomitted={}", tool, total, shown, omitted);
+        println!(
+            "@meta\ttool={}\ttotal={}\tprinted={}\tomitted={}",
+            tool, total, shown, omitted
+        );
     }
 
     status
@@ -209,7 +235,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
     }
 
     if rg_is_filelist_mode(&args) {
-        let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never"), OsString::from("-0")];
+        let mut cmd_args: Vec<OsString> =
+            vec![OsString::from("--color=never"), OsString::from("-0")];
         cmd_args.extend_from_slice(&args);
         let out = match cmd_capture(tool, &cmd_args) {
             Ok(o) => o,
@@ -226,7 +253,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
     }
 
     // Match mode: use `rg --json` for structured output.
-    let mut cmd_args: Vec<OsString> = vec![OsString::from("--color=never"), OsString::from("--json")];
+    let mut cmd_args: Vec<OsString> =
+        vec![OsString::from("--color=never"), OsString::from("--json")];
     cmd_args.extend_from_slice(&args);
     let out = match cmd_capture(tool, &cmd_args) {
         Ok(o) => o,
@@ -288,7 +316,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
         g.match_lines += 1;
         if !capped || g.shown_lines.len() < cfg.max_rg_match_lines_per_file {
             let body = render_maybe_gated_line("rg-x truncated", &line_bytes, &cfg);
-            g.shown_lines.push(format!("{}:{}:{}", data.line_number, col_no, body));
+            g.shown_lines
+                .push(format!("{}:{}:{}", data.line_number, col_no, body));
         } else {
             g.omitted_lines += 1;
         }
@@ -307,15 +336,23 @@ pub fn run(args: &[OsString]) -> ExitCode {
     let printed_files = shown_paths.len() as u64;
     let omitted_files = total_files.saturating_sub(printed_files);
 
-    let total_match_lines_all: u64 =
-        std::cmp::max(total_match_lines, groups.values().map(|g| g.match_lines).sum());
+    let total_match_lines_all: u64 = std::cmp::max(
+        total_match_lines,
+        groups.values().map(|g| g.match_lines).sum(),
+    );
     let mut printed_match_lines: u64 = 0;
 
     for p in &shown_paths {
         let g = &groups[p];
         let meta = path_meta(p.as_path());
-        let bytes = meta.bytes.map(|b| b.to_string()).unwrap_or_else(|| "-".to_string());
-        let lines = meta.lines.map(|l| l.to_string()).unwrap_or_else(|| "-".to_string());
+        let bytes = meta
+            .bytes
+            .map(|b| b.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let lines = meta
+            .lines
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "-".to_string());
 
         let path_s = strip_dot_slash(&p.to_string_lossy()).to_string();
         if g.omitted_lines > 0 {
@@ -342,7 +379,12 @@ pub fn run(args: &[OsString]) -> ExitCode {
                 );
             }
         } else if meta.kind == PathKind::File {
-            println!("@file\tpath={}\tbytes={}\tlines={}", escape_field(&path_s), bytes, lines);
+            println!(
+                "@file\tpath={}\tbytes={}\tlines={}",
+                escape_field(&path_s),
+                bytes,
+                lines
+            );
         } else {
             println!(
                 "@file\tpath={}\tkind={}\tbytes={}\tlines={}",
