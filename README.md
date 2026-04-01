@@ -76,6 +76,17 @@ Run cross-validation:
 python3 -m unittest discover -s tests -q
 ```
 
+## Git hooks (prek)
+
+This repo uses `prek` to run `.pre-commit-config.yaml`. The committed `.githooks/pre-commit` is a self-healing shim that re-runs `prek run` and auto-stages fixes until the staged set converges.
+
+One-time setup:
+
+```bash
+git config core.hooksPath .githooks
+prek prepare-hooks
+```
+
 ## Build & release
 
 Build + package all external-facing artifacts into `dist/`:

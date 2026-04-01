@@ -18,6 +18,7 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
 
 - Run all tests: `scripts/test_all.sh`
 - Build + package release artifacts: `scripts/release_local.sh --version vX.Y.Z`
+- Enable git hooks (self-healing `prek` shim): `git config core.hooksPath .githooks`
 
 ## Invariants (treat as contract)
 
@@ -26,7 +27,7 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
 - Preserve canonical semantics: if an `fd`/`rg` flag changes the output shape (context, replacements, custom formats, etc.), passthrough.
 - Determinism: wrapped `rg` calls ignore `RIPGREP_CONFIG_PATH` (passthrough keeps the original environment).
 - Determinism: wrapped tool captures set `stdin` to `/dev/null` so `rg-x PATTERN` searches the filesystem even when the parent has piped stdin (CI).
-- Avoid committing machine-local paths; pre-commit runs `internal/check_repo_hygiene.py`.
+- Avoid committing machine-local paths; `prek` runs `scripts/check_repo_hygiene.py` via `.pre-commit-config.yaml`.
 
 ## Repo-inspection hygiene (for agentic sessions)
 
