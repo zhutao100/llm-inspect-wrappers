@@ -244,6 +244,49 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(lm.line, 1)
                 self.assertIn("rg-x truncated", lm.body)
 
+    def test_rg_x_no_omit_when_total_is_small(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "many.txt").write_text("".join("needle\n" for _ in range(30)), encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "needle", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertIn("many.txt", headers)
+                self.assertIn("many.txt", matches)
+                self.assertEqual(len(matches["many.txt"]), 30)
+                self.assertEqual(int(meta.get("match_lines", "0")), 30)
+                self.assertEqual(int(meta.get("printed_match_lines", "0")), 30)
+                self.assertEqual(int(meta.get("omitted_match_lines", "0")), 0)
+
+    def test_rg_x_capped_when_over_no_omit_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "many.txt").write_text("".join("needle\n" for _ in range(30)), encoding="utf-8")
+            env = {"LLM_X_MAX_RG_NO_OMIT_MATCH_LINES": "5"}
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "needle", cwd=root, env=env)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertNotIn("hits", meta)
+                self.assertIn("many.txt", headers)
+                self.assertNotIn("hits", headers["many.txt"])
+                self.assertEqual(headers["many.txt"].get("match_lines"), "30")
+                self.assertEqual(headers["many.txt"].get("shown"), "20")
+                self.assertEqual(headers["many.txt"].get("omitted"), "10")
+                self.assertEqual(len(matches["many.txt"]), 20)
+                self.assertEqual(int(meta.get("match_lines", "0")), 30)
+                self.assertEqual(int(meta.get("printed_match_lines", "0")), 20)
+                self.assertEqual(int(meta.get("omitted_match_lines", "0")), 10)
+
     def test_rg_x_filelist_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

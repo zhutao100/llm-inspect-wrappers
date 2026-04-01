@@ -134,6 +134,7 @@ mod tests {
             max_fd_rows: 0,
             max_rg_files: 0,
             max_rg_match_lines_per_file: 0,
+            max_rg_no_omit_match_lines: 0,
             sedx_stdin_max_lines: 0,
             sedx_stdin_max_bytes: 0,
         };
@@ -153,6 +154,7 @@ mod tests {
             max_fd_rows: 0,
             max_rg_files: 0,
             max_rg_match_lines_per_file: 0,
+            max_rg_no_omit_match_lines: 0,
             sedx_stdin_max_lines: 0,
             sedx_stdin_max_bytes: 0,
         };

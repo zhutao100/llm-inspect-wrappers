@@ -188,7 +188,7 @@ struct RgMatchData {
 
 #[derive(Debug, Default, Clone)]
 struct Group {
-    hits: u64,
+    match_lines: u64,
     shown_lines: Vec<String>,
     omitted_lines: u64,
 }
@@ -239,6 +239,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
     }
 
     let mut groups: HashMap<PathBuf, Group> = HashMap::new();
+    let mut total_match_lines: u64 = 0;
+    let mut capped: bool = false;
 
     for line in out.stdout.split(|b| *b == b'\n') {
         if line.is_empty() {
@@ -270,12 +272,21 @@ pub fn run(args: &[OsString]) -> ExitCode {
             Err(_) => return replay_raw(&out),
         };
 
-        let col_no = rg_match_col_no(&data.submatches);
-        let hit_incr = std::cmp::max(1, data.submatches.len()) as u64;
+        if total_match_lines >= cfg.max_rg_no_omit_match_lines as u64 && !capped {
+            for g in groups.values_mut() {
+                if g.shown_lines.len() > cfg.max_rg_match_lines_per_file {
+                    g.shown_lines.truncate(cfg.max_rg_match_lines_per_file);
+                }
+                g.omitted_lines = g.match_lines.saturating_sub(g.shown_lines.len() as u64);
+            }
+            capped = true;
+        }
 
+        total_match_lines += 1;
+        let col_no = rg_match_col_no(&data.submatches);
         let g = groups.entry(path).or_default();
-        g.hits += hit_incr;
-        if g.shown_lines.len() < cfg.max_rg_match_lines_per_file {
+        g.match_lines += 1;
+        if !capped || g.shown_lines.len() < cfg.max_rg_match_lines_per_file {
             let body = render_maybe_gated_line("rg-x truncated", &line_bytes, &cfg);
             g.shown_lines.push(format!("{}:{}:{}", data.line_number, col_no, body));
         } else {
@@ -286,17 +297,19 @@ pub fn run(args: &[OsString]) -> ExitCode {
     let mut all_paths: Vec<PathBuf> = groups.keys().cloned().collect();
     all_paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
 
-    let shown_paths: Vec<PathBuf> = all_paths.into_iter().take(cfg.max_rg_files).collect();
+    let shown_paths: Vec<PathBuf> = if capped {
+        all_paths.into_iter().take(cfg.max_rg_files).collect()
+    } else {
+        all_paths
+    };
 
+    let total_files = groups.len() as u64;
+    let printed_files = shown_paths.len() as u64;
+    let omitted_files = total_files.saturating_sub(printed_files);
+
+    let total_match_lines_all: u64 =
+        std::cmp::max(total_match_lines, groups.values().map(|g| g.match_lines).sum());
     let mut printed_match_lines: u64 = 0;
-    let mut total_match_lines: u64 = 0;
-    let mut total_hits: u64 = 0;
-
-    for p in groups.keys() {
-        let g = &groups[p];
-        total_match_lines += g.shown_lines.len() as u64 + g.omitted_lines;
-        total_hits += g.hits;
-    }
 
     for p in &shown_paths {
         let g = &groups[p];
@@ -308,22 +321,22 @@ pub fn run(args: &[OsString]) -> ExitCode {
         if g.omitted_lines > 0 {
             if meta.kind == PathKind::File {
                 println!(
-                    "@file\tpath={}\tbytes={}\tlines={}\thits={}\tshown={}\tomitted={}",
+                    "@file\tpath={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}\tomitted={}",
                     escape_field(&path_s),
                     bytes,
                     lines,
-                    g.hits,
+                    g.match_lines,
                     g.shown_lines.len(),
                     g.omitted_lines
                 );
             } else {
                 println!(
-                    "@file\tpath={}\tkind={}\tbytes={}\tlines={}\thits={}\tshown={}\tomitted={}",
+                    "@file\tpath={}\tkind={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}\tomitted={}",
                     escape_field(&path_s),
                     meta.kind.as_str(),
                     bytes,
                     lines,
-                    g.hits,
+                    g.match_lines,
                     g.shown_lines.len(),
                     g.omitted_lines
                 );
@@ -346,20 +359,16 @@ pub fn run(args: &[OsString]) -> ExitCode {
         printed_match_lines += g.shown_lines.len() as u64;
     }
 
-    let total_files = groups.len() as u64;
-    let printed_files = shown_paths.len() as u64;
-    let omitted_files = total_files.saturating_sub(printed_files);
-    let omitted_match_lines = total_match_lines.saturating_sub(printed_match_lines);
+    let omitted_match_lines = total_match_lines_all.saturating_sub(printed_match_lines);
 
     println!(
-        "@meta\ttool=rg-x\tmode=match\tfiles={}\tprinted_files={}\tomitted_files={}\tmatch_lines={}\tprinted_match_lines={}\tomitted_match_lines={}\thits={}",
+        "@meta\ttool=rg-x\tmode=match\tfiles={}\tprinted_files={}\tomitted_files={}\tmatch_lines={}\tprinted_match_lines={}\tomitted_match_lines={}",
         total_files,
         printed_files,
         omitted_files,
-        total_match_lines,
+        total_match_lines_all,
         printed_match_lines,
-        omitted_match_lines,
-        total_hits
+        omitted_match_lines
     );
 
     eprint!("{}", String::from_utf8_lossy(&out.stderr));

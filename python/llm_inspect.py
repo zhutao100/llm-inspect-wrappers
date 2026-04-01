@@ -36,7 +36,8 @@ from typing import Iterable
 class Config:
     max_fd_rows: int = int(os.getenv("LLM_X_MAX_FD_ROWS", "200"))
     max_rg_files: int = int(os.getenv("LLM_X_MAX_RG_FILES", "80"))
-    max_rg_match_lines_per_file: int = int(os.getenv("LLM_X_MAX_RG_MATCH_LINES_PER_FILE", "4"))
+    max_rg_match_lines_per_file: int = int(os.getenv("LLM_X_MAX_RG_MATCH_LINES_PER_FILE", "20"))
+    max_rg_no_omit_match_lines: int = int(os.getenv("LLM_X_MAX_RG_NO_OMIT_MATCH_LINES", "200"))
 
     soft_line_chars: int = int(os.getenv("LLM_X_SOFT_LINE_CHARS", "400"))
     hard_line_chars: int = int(os.getenv("LLM_X_HARD_LINE_CHARS", "2000"))
@@ -69,7 +70,7 @@ class FileMeta:
 @dataclasses.dataclass
 class RgFileGroup:
     path: str
-    hits: int = 0
+    match_lines: int = 0
     shown_lines: list[str] = dataclasses.field(default_factory=list)
     omitted_lines: int = 0
 
@@ -602,6 +603,8 @@ def main_rg_json(args: list[str]) -> int:
         return replay_raw(cp)
 
     groups_by_path: dict[str, RgFileGroup] = {}
+    total_match_lines = 0
+    capped = False
     try:
         for raw_line in cp.stdout.splitlines():
             if not raw_line.strip():
@@ -620,29 +623,40 @@ def main_rg_json(args: list[str]) -> int:
             line_text = rg_decode_obj_text(data.get("lines", {}))
             line_no = data.get("line_number")
             submatches = data.get("submatches", [])
-            hit_incr = max(1, len(submatches))
             col_no = 1
             if submatches and isinstance(submatches[0], dict):
                 start = submatches[0].get("start")
                 if isinstance(start, int):
                     col_no = start + 1
 
+            if not capped and total_match_lines >= CFG.max_rg_no_omit_match_lines:
+                for g in groups_by_path.values():
+                    if len(g.shown_lines) > CFG.max_rg_match_lines_per_file:
+                        g.shown_lines = g.shown_lines[: CFG.max_rg_match_lines_per_file]
+                    g.omitted_lines = g.match_lines - len(g.shown_lines)
+                capped = True
+
+            total_match_lines += 1
             grp = groups_by_path.setdefault(path, RgFileGroup(path=path))
-            grp.hits += hit_incr
-            if len(grp.shown_lines) < CFG.max_rg_match_lines_per_file:
+            grp.match_lines += 1
+            if not capped or len(grp.shown_lines) < CFG.max_rg_match_lines_per_file:
                 grp.shown_lines.append(render_rg_match_line(line_no, col_no, line_text))
             else:
                 grp.omitted_lines += 1
 
         all_paths = sorted(groups_by_path.keys())
-        shown_paths = all_paths[: CFG.max_rg_files]
-        omitted_files = len(all_paths) - len(shown_paths)
+        if capped:
+            shown_paths = all_paths[: CFG.max_rg_files]
+            omitted_files = len(all_paths) - len(shown_paths)
+        else:
+            shown_paths = all_paths
+            omitted_files = 0
 
         metas = collect_meta(shown_paths)
 
         out_lines: list[str] = []
         printed_match_lines = 0
-        total_match_lines = 0
+        total_match_lines_all = max(total_match_lines, sum(groups_by_path[p].match_lines for p in all_paths))
 
         for p in shown_paths:
             g = groups_by_path[p]
@@ -655,7 +669,7 @@ def main_rg_json(args: list[str]) -> int:
                 f"bytes={b}",
                 f"lines={l}",
                 *(
-                    [f"hits={g.hits}", f"shown={len(g.shown_lines)}", f"omitted={g.omitted_lines}"]
+                    [f"match_lines={g.match_lines}", f"shown={len(g.shown_lines)}", f"omitted={g.omitted_lines}"]
                     if g.omitted_lines
                     else []
                 ),
@@ -663,19 +677,13 @@ def main_rg_json(args: list[str]) -> int:
             out_lines.append("\t".join(file_parts))
             out_lines.extend(g.shown_lines)
             printed_match_lines += len(g.shown_lines)
-            total_match_lines += len(g.shown_lines) + g.omitted_lines
 
-        for p in all_paths[len(shown_paths) :]:
-            g = groups_by_path[p]
-            total_match_lines += len(g.shown_lines) + g.omitted_lines
-
-        omitted_match_lines = total_match_lines - printed_match_lines
-        total_hits = sum(groups_by_path[p].hits for p in all_paths)
+        omitted_match_lines = total_match_lines_all - printed_match_lines
 
         out_lines.append(
             f"@meta\ttool=rg-x\tmode=match\tfiles={len(all_paths)}\tprinted_files={len(shown_paths)}"
-            f"\tomitted_files={omitted_files}\tmatch_lines={total_match_lines}\tprinted_match_lines={printed_match_lines}"
-            f"\tomitted_match_lines={omitted_match_lines}\thits={total_hits}"
+            f"\tomitted_files={omitted_files}\tmatch_lines={total_match_lines_all}\tprinted_match_lines={printed_match_lines}"
+            f"\tomitted_match_lines={omitted_match_lines}"
         )
         sys.stdout.write("\n".join(out_lines) + "\n")
         sys.stderr.buffer.write(cp.stderr)

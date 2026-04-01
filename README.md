@@ -61,6 +61,7 @@ Key knobs:
 - `LLM_X_MAX_FD_ROWS` (file tables: `fd-x`, `rg-x -l`, etc.)
 - `LLM_X_MAX_RG_FILES` (file groups in `rg-x` match mode)
 - `LLM_X_MAX_RG_MATCH_LINES_PER_FILE` (match lines per file in `rg-x` match mode)
+- `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES` (print all match lines when results are small)
 
 Details: `docs/caps_and_omissions.md`
 

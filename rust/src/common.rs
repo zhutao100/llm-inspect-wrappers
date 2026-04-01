@@ -11,6 +11,7 @@ pub struct Config {
     pub max_fd_rows: usize,
     pub max_rg_files: usize,
     pub max_rg_match_lines_per_file: usize,
+    pub max_rg_no_omit_match_lines: usize,
     pub sedx_stdin_max_lines: usize,
     pub sedx_stdin_max_bytes: usize,
     pub soft_line_chars: usize,
@@ -24,7 +25,8 @@ impl Config {
         Self {
             max_fd_rows: env_usize("LLM_X_MAX_FD_ROWS", 200),
             max_rg_files: env_usize("LLM_X_MAX_RG_FILES", 80),
-            max_rg_match_lines_per_file: env_usize("LLM_X_MAX_RG_MATCH_LINES_PER_FILE", 4),
+            max_rg_match_lines_per_file: env_usize("LLM_X_MAX_RG_MATCH_LINES_PER_FILE", 20),
+            max_rg_no_omit_match_lines: env_usize("LLM_X_MAX_RG_NO_OMIT_MATCH_LINES", 200),
             sedx_stdin_max_lines: env_usize("LLM_X_SEDX_STDIN_MAX_LINES", 200000),
             sedx_stdin_max_bytes: env_usize("LLM_X_SEDX_STDIN_MAX_BYTES", 10000000),
             soft_line_chars: env_usize("LLM_X_SOFT_LINE_CHARS", 400),

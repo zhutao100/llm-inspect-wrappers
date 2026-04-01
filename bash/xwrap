@@ -18,7 +18,8 @@ export LC_ALL=C LANG=C
 
 MAX_FD_ROWS="${LLM_X_MAX_FD_ROWS:-200}"
 MAX_RG_FILES="${LLM_X_MAX_RG_FILES:-80}"
-MAX_RG_MATCH_LINES_PER_FILE="${LLM_X_MAX_RG_MATCH_LINES_PER_FILE:-4}"
+MAX_RG_MATCH_LINES_PER_FILE="${LLM_X_MAX_RG_MATCH_LINES_PER_FILE:-20}"
+MAX_RG_NO_OMIT_MATCH_LINES="${LLM_X_MAX_RG_NO_OMIT_MATCH_LINES:-200}"
 
 SOFT_LINE_CHARS="${LLM_X_SOFT_LINE_CHARS:-400}"
 HARD_LINE_CHARS="${LLM_X_HARD_LINE_CHARS:-2000}"
@@ -389,6 +390,9 @@ rg_x_match() {
   local match_lines_printed=0
   local match_lines_omitted=0
 
+  local max_files_cap="$MAX_RG_FILES"
+  local max_lines_cap="$MAX_RG_MATCH_LINES_PER_FILE"
+
   local current_path=""
   local current_hits=0
   local current_omitted=0
@@ -406,7 +410,7 @@ rg_x_match() {
     files_seen=$((files_seen + 1))
     match_lines_total=$((match_lines_total + current_hits))
 
-    if (( files_printed < MAX_RG_FILES )); then
+    if (( files_printed < max_files_cap )); then
       files_printed=$((files_printed + 1))
 
       out_lines+=(
@@ -417,7 +421,7 @@ rg_x_match() {
           fi
           printf '\tbytes=%s\tlines=%s' "$current_bytes" "$current_lines"
           if (( current_omitted > 0 )); then
-            printf '\thits=%s\tshown=%s\tomitted=%s' "$current_hits" "${#current_lines_out[@]}" "$current_omitted"
+            printf '\tmatch_lines=%s\tshown=%s\tomitted=%s' "$current_hits" "${#current_lines_out[@]}" "$current_omitted"
           fi
         )"
       )
@@ -463,22 +467,9 @@ rg_x_match() {
     fi
   }
 
-  local fifo pid tmpdir
-  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --no-heading --line-number --column "$@"; then
-    exec rg --color=never "$@"
-  fi
-  fifo="$RUN_FIFO"
-  pid="$RUN_PID"
-  tmpdir="$RUN_TMPDIR"
-
-  exec 3<"$fifo"
-  while IFS= read -r -d '' p <&3; do
-    local rest
-    if ! IFS= read -r rest <&3; then
-      rest=""
-    fi
-
-    p="${p#./}"
+  consume_event() {
+    local p="${1-}"
+    local rest="${2-}"
 
     if [[ "$p" != "$current_path" ]]; then
       flush_current
@@ -487,7 +478,7 @@ rg_x_match() {
 
     current_hits=$((current_hits + 1))
 
-    if (( ${#current_lines_out[@]} < MAX_RG_MATCH_LINES_PER_FILE )); then
+    if (( ${#current_lines_out[@]} < max_lines_cap )); then
       local line_no col_no text rest2 rendered
       line_no="${rest%%:*}"
       rest2="${rest#*:}"
@@ -498,6 +489,46 @@ rg_x_match() {
     else
       current_omitted=$((current_omitted + 1))
     fi
+  }
+
+  local fifo pid tmpdir
+  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --no-heading --line-number --column "$@"; then
+    exec rg --color=never "$@"
+  fi
+  fifo="$RUN_FIFO"
+  pid="$RUN_PID"
+  tmpdir="$RUN_TMPDIR"
+
+  exec 3<"$fifo"
+  local buffering=1
+  local buffered=0
+  local -a buf_paths=()
+  local -a buf_rests=()
+  while IFS= read -r -d '' p <&3; do
+    local rest
+    if ! IFS= read -r rest <&3; then
+      rest=""
+    fi
+
+    p="${p#./}"
+
+    if (( buffering )); then
+      buf_paths+=("$p")
+      buf_rests+=("$rest")
+      buffered=$((buffered + 1))
+
+      if (( buffered > MAX_RG_NO_OMIT_MATCH_LINES )); then
+        buffering=0
+        local i
+        for (( i = 0; i < ${#buf_paths[@]}; i++ )); do
+          consume_event "${buf_paths[$i]}" "${buf_rests[$i]}"
+        done
+        buf_paths=()
+        buf_rests=()
+      fi
+    else
+      consume_event "$p" "$rest"
+    fi
   done
   exec 3<&-
 
@@ -507,6 +538,15 @@ rg_x_match() {
 
   if (( rc == 2 )); then
     exec rg --color=never "$@"
+  fi
+
+  if (( buffering )); then
+    max_files_cap=2000000000
+    max_lines_cap=2000000000
+    local i
+    for (( i = 0; i < ${#buf_paths[@]}; i++ )); do
+      consume_event "${buf_paths[$i]}" "${buf_rests[$i]}"
+    done
   fi
 
   flush_current

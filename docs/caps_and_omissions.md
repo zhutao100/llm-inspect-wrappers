@@ -20,8 +20,10 @@ All wrappers are **best-effort**: if an invocation is unsupported or parsing fai
     - `rg-x -l ...` / `rg-x --files-with-matches ...` / other `rg` file-list modes
 - `LLM_X_MAX_RG_FILES=80`
   - Caps **file groups** printed by `rg-x` **match mode**.
-- `LLM_X_MAX_RG_MATCH_LINES_PER_FILE=4`
-  - Caps **match lines printed per file** in `rg-x` **match mode**.
+- `LLM_X_MAX_RG_MATCH_LINES_PER_FILE=20`
+  - Caps **match lines printed per file** in `rg-x` **match mode** (when output is capped).
+- `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES=200`
+  - If total match lines across all files is **≤ this value**, `rg-x` prints **all** match lines (no omissions) and disables the file/per-file caps for that run.
 
 ### Stdin total scanning caps (`sed-x`)
 When `sed-x` reads from **stdin**, it may continue reading after the requested range to compute totals (`lines`, `bytes`). That scan is bounded by:
@@ -83,7 +85,16 @@ Trailer line:
 
 If `rg-x` is not in passthrough mode and not in file-list mode, it runs `rg` in a structured mode and groups output by file.
 
+### No-omit for small results
+If total match lines across all matching files is **≤ `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES`**, `rg-x` prints:
+- all matching file groups
+- all match lines in those files
+
+(This still applies long-line gating to avoid pathological token blowups.)
+
 ### What gets capped / omitted
+If the total match lines exceed `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES`, `rg-x` switches to capped output:
+
 1) **Per-file match line cap**
 - For each file group, only the first `LLM_X_MAX_RG_MATCH_LINES_PER_FILE` match lines are printed.
 - Additional match lines in the same file are **omitted** and counted.
@@ -99,16 +110,16 @@ Each printed file group starts with an `@file` line:
 ```
 If per-file match lines were omitted due to `LLM_X_MAX_RG_MATCH_LINES_PER_FILE`, the header also includes:
 ```
-hits=H	shown=S	omitted=K
+match_lines=M	shown=S	omitted=K
 ```
 - `shown`: printed match lines for that file (≤ `LLM_X_MAX_RG_MATCH_LINES_PER_FILE`)
 - `omitted`: match lines in that file not printed due to the per-file cap
-- `hits`: extra summary (implementation-dependent); do not treat as a stable contract
+- `match_lines = shown + omitted`
 
 ### Trailer meta fields
 All match-mode output ends with:
 ```
-@meta	tool=rg-x	mode=match	files=F	printed_files=PF	omitted_files=OF	match_lines=ML	printed_match_lines=PML	omitted_match_lines=OML	[ hits=... ]
+@meta	tool=rg-x	mode=match	files=F	printed_files=PF	omitted_files=OF	match_lines=ML	printed_match_lines=PML	omitted_match_lines=OML
 ```
 Interpretation:
 - `files`: number of files with at least one match.
@@ -117,7 +128,6 @@ Interpretation:
 - `match_lines`: total match lines across **all** matching files.
 - `printed_match_lines`: match lines actually printed (bounded by both caps).
 - `omitted_match_lines = match_lines - printed_match_lines`.
-- `hits`: optional extra summary in some implementations; ignore if absent.
 
 ### Important implications
 - Even when file groups are omitted due to `LLM_X_MAX_RG_FILES`, their matches still contribute to:
