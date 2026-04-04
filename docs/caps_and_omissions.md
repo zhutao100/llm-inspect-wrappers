@@ -54,11 +54,18 @@ Tuning:
 ### Meta meaning
 Trailer line:
 ```
-@meta	tool=fd-x	total=T	printed=P	omitted=O
+@meta	tool=fd-x	total=T	printed=P	omitted=O	[ max_results=N	returned=R	unseen=U ]
 ```
-- `total`: total number of paths returned by canonical `fd`.
-- `printed`: number of rows actually printed (≤ `LLM_X_MAX_FD_ROWS`).
-- `omitted = total - printed`.
+- `total`:
+  - default: total number of paths returned by canonical `fd`.
+  - when user passes `--max-results N` and the wrapper can compute an uncapped count: total number of paths `fd` would return **as if `--max-results` were removed** (all other args identical).
+- `printed`: number of rows actually printed (≤ `LLM_X_MAX_FD_ROWS`, and ≤ `returned` when present).
+- `omitted = returned - printed` (or `total - printed` when `returned` is absent): wrapper-only truncation due to `LLM_X_MAX_FD_ROWS`.
+
+When `--max-results` is present and successfully parsed, the meta line also includes:
+- `max_results`: the user-provided `--max-results N`.
+- `returned`: number of paths actually returned by `fd` under the user cap.
+- `unseen = total - returned`: paths excluded only due to the user cap.
 
 ### Notes
 - File metadata (`bytes=...`, `lines=...`) is computed **only for printed rows**.
@@ -78,12 +85,15 @@ Trailer line:
 ```
 @meta	tool=rg-x	mode=filelist	total=T	printed=P	omitted=O
 ```
+If there are **0 rows** (no file paths), `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (typically `1` for “no matches”).
 
 ---
 
 ## `rg-x` match mode: file cap + per-file match-line cap
 
 If `rg-x` is not in passthrough mode and not in file-list mode, it runs `rg` in a structured mode and groups output by file.
+
+If there are **0 matches**, `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (`1`).
 
 ### No-omit for small results
 If total match lines across all matching files is **≤ `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES`**, `rg-x` prints:
