@@ -8,17 +8,17 @@ I evaluated each proposal against the task’s explicit requirements: **drop-in 
 
 You effectively have three distinct implementation directions:
 
-1. **GLM 5.1**: `docs/proposals/proposal_glm_5_1/`
+1. **GLM 5.1**: `docs/archive/proposals/proposal_glm_5_1/`
 
    * `xwrap.sh` (single Bash multicall script; symlinked as `fd-x`, `rg-x`, `sed-x`)
    * `AGENTS_addon.md` + design markdown
 
-2. **GPT-5.4**: `docs/proposals/proposal_gpt_5_4/`
+2. **GPT-5.4**: `docs/archive/proposals/proposal_gpt_5_4/`
 
    * `llm_inspect.py` (single Python multicall script; symlinked as `fd-x`, `rg-x`, `sed-x`)
    * `AGENTS_addon.md` + design markdown
 
-3. **GPT-5.2**: `docs/proposals/proposal_gpt_5_2/`
+3. **GPT-5.2**: `docs/archive/proposals/proposal_gpt_5_2/`
 
    * `llm-inspect-wrappers-rs/` (Rust multicall binary; symlinked as `fd-x`, `rg-x`, `sed-x`)
    * `AGENTS_addon.md` + design markdown
