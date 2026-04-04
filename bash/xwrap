@@ -368,7 +368,9 @@ rg_x_filelist() {
     printf '%s\n' "${out_rows[@]}"
   fi
   local omitted=$((total - printed))
-  printf '@meta\ttool=rg-x\tmode=filelist\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
+  if ((total > 0)); then
+    printf '@meta\ttool=rg-x\tmode=filelist\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
+  fi
   return "$rc"
 }
 
@@ -539,6 +541,10 @@ rg_x_match() {
   fi
 
   flush_current
+
+  if ((files_seen == 0)); then
+    return "$rc"
+  fi
 
   if ((${#out_lines[@]} > 0)); then
     printf '%s\n' "${out_lines[@]}"

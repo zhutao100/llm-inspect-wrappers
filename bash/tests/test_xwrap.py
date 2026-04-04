@@ -101,6 +101,16 @@ class TestXwrapBash(unittest.TestCase):
 
             self.assertTrue(any(ln.startswith("@meta\ttool=rg-x\tmode=match\t") for ln in lines))
 
+    @unittest.skipUnless(have_tools("rg"), "requires rg on PATH")
+    def test_rg_x_no_match_emits_empty_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "hay.txt").write_text("hay here\n", encoding="utf-8")
+
+            cp = run_xwrap("rg-x", "needle", cwd=root)
+            self.assertEqual(cp.returncode, 1, cp.stderr)
+            self.assertEqual(cp.stdout, "")
+
     def test_sed_x_range_gates_long_line(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
