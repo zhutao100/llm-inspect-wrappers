@@ -237,10 +237,19 @@ def collect_meta(paths: list[str]) -> dict[str, FileMeta]:
     return metas
 
 
-def render_file_table(tool: str, paths: list[str], max_rows: int, mode: str | None = None) -> str:
-    total = len(paths)
+def render_file_table(
+    tool: str,
+    paths: list[str],
+    max_rows: int,
+    mode: str | None = None,
+    *,
+    total_override: int | None = None,
+    meta_extra: list[tuple[str, str]] | None = None,
+) -> str:
+    total_in = len(paths)
     shown = sorted(paths)[:max_rows]
-    omitted = total - len(shown)
+    omitted = total_in - len(shown)
+    total = total_override if total_override is not None else total_in
 
     # Only collect metadata for rows we will print (line counts can be expensive on large repos).
     metas = collect_meta(shown)
@@ -261,6 +270,8 @@ def render_file_table(tool: str, paths: list[str], max_rows: int, mode: str | No
     meta_fields.append(f"total={total}")
     meta_fields.append(f"printed={len(shown)}")
     meta_fields.append(f"omitted={omitted}")
+    if meta_extra:
+        meta_fields.extend([f"{k}={v}" for k, v in meta_extra])
     out.append("\t".join(meta_fields))
     return "\n".join(out) + "\n"
 
@@ -454,12 +465,98 @@ def fd_strip_color_args(args: list[str]) -> list[str]:
     return out
 
 
+def fd_parse_max_results(args: list[str]) -> tuple[int | None, list[str]]:
+    """
+    Returns (max_results, args_uncapped), where args_uncapped has any parsed `--max-results`
+    removed (preserving `--` semantics).
+    """
+    out: list[str] = []
+    max_results: int | None = None
+
+    i = 0
+    after_end_of_options = False
+    while i < len(args):
+        a = args[i]
+
+        if after_end_of_options:
+            out.append(a)
+            i += 1
+            continue
+
+        if a == "--":
+            after_end_of_options = True
+            out.append(a)
+            i += 1
+            continue
+
+        if a == "--max-results" and i + 1 < len(args):
+            try:
+                n = int(args[i + 1])
+            except ValueError:
+                n = -1
+            if n >= 0:
+                max_results = n
+                i += 2
+                continue
+
+        if a.startswith("--max-results="):
+            raw = a.split("=", 1)[1]
+            try:
+                n = int(raw)
+            except ValueError:
+                n = -1
+            if n >= 0:
+                max_results = n
+                i += 1
+                continue
+
+        out.append(a)
+        i += 1
+
+    return max_results, out
+
+
+def count_nul_paths_stream(argv: list[str]) -> int | None:
+    try:
+        p = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=False,
+            env=env_c(),
+        )
+    except Exception:
+        return None
+
+    assert p.stdout is not None
+    count = 0
+    carry = b""
+    while True:
+        chunk = p.stdout.read(1 << 16)
+        if not chunk:
+            break
+        data = carry + chunk
+        parts = data.split(b"\0")
+        for part in parts[:-1]:
+            if part:
+                count += 1
+        carry = parts[-1]
+    if carry:
+        count += 1
+
+    rc = p.wait()
+    return count if rc == 0 else None
+
+
 def main_fd(args: list[str]) -> int:
     real = "fd"
     args = fd_strip_color_args(args)
 
     if not fd_x_supported(args):
         return passthrough([real, "--color=never", *args])
+
+    max_results, args_uncapped = fd_parse_max_results(args)
 
     cp = run_capture([real, "--color=never", "-0", *args])
     if cp.returncode != 0:
@@ -470,7 +567,25 @@ def main_fd(args: list[str]) -> int:
 
     try:
         paths = parse_nul_paths(cp.stdout)
-        out = render_file_table("fd-x", paths, max_rows=CFG.max_fd_rows)
+        returned = len(paths)
+        total = returned
+        unseen = 0
+
+        if max_results is not None and returned == max_results:
+            counted = count_nul_paths_stream([real, "--color=never", "-0", *args_uncapped])
+            if counted is not None and counted >= returned:
+                total = counted
+                unseen = counted - returned
+
+        meta_extra: list[tuple[str, str]] | None = None
+        if max_results is not None:
+            meta_extra = [
+                ("max_results", str(max_results)),
+                ("returned", str(returned)),
+                ("unseen", str(unseen)),
+            ]
+
+        out = render_file_table("fd-x", paths, max_rows=CFG.max_fd_rows, total_override=total, meta_extra=meta_extra)
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
         return int(cp.returncode)

@@ -189,6 +189,25 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 for fields in rows.values():
                     self.assertEqual(fields, {})
 
+    def test_fd_x_max_results_reports_true_total(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i in range(5):
+                (root / f"f{i}.txt").write_text("x\n", encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("fd-x", "-tf", "--max-results", "2", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "fd-x")
+                self.assertEqual(meta.get("max_results"), "2")
+                self.assertEqual(meta.get("returned"), "2")
+                self.assertEqual(meta.get("total"), "5")
+                self.assertEqual(meta.get("unseen"), "3")
+                self.assertEqual(meta.get("printed"), "2")
+                self.assertEqual(meta.get("omitted"), "0")
+                self.assertEqual(len(rows), 2)
+
     def test_fd_x_help_is_passthrough(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -3,8 +3,9 @@ use crate::common::{
     Config, PathKind,
 };
 use std::ffi::{OsStr, OsString};
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Stdio};
 
 #[cfg(unix)]
 fn pathbuf_from_bytes(bytes: &[u8]) -> PathBuf {
@@ -81,10 +82,97 @@ fn fd_x_supported(args: &[OsString]) -> bool {
     true
 }
 
+fn fd_parse_max_results(args: &[OsString]) -> (Option<usize>, Vec<OsString>) {
+    let mut out: Vec<OsString> = Vec::with_capacity(args.len());
+    let mut max_results: Option<usize> = None;
+
+    let mut i = 0;
+    let mut after_end_of_options = false;
+    while i < args.len() {
+        let a = &args[i];
+
+        if after_end_of_options {
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--") {
+            after_end_of_options = true;
+            out.push(a.clone());
+            i += 1;
+            continue;
+        }
+
+        if a == OsStr::new("--max-results") && i + 1 < args.len() {
+            if let Ok(n) = args[i + 1].to_string_lossy().parse::<usize>() {
+                max_results = Some(n);
+                i += 2;
+                continue;
+            }
+        }
+
+        let s = a.to_string_lossy();
+        if let Some(rest) = s.strip_prefix("--max-results=") {
+            if let Ok(n) = rest.parse::<usize>() {
+                max_results = Some(n);
+                i += 1;
+                continue;
+            }
+        }
+
+        out.push(a.clone());
+        i += 1;
+    }
+
+    (max_results, out)
+}
+
+fn count_nul_paths_stream(tool: &OsStr, args: &[OsString]) -> Option<usize> {
+    let mut child = Command::new(tool)
+        .args(args)
+        .env("LC_ALL", "C")
+        .env("LANG", "C")
+        .env_remove("RIPGREP_CONFIG_PATH")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let mut stdout = child.stdout.take()?;
+    let mut buf = [0u8; 64 * 1024];
+    let mut count: usize = 0;
+    let mut in_path = false;
+    loop {
+        let read = stdout.read(&mut buf).ok()?;
+        if read == 0 {
+            break;
+        }
+        for b in &buf[..read] {
+            if *b == 0 {
+                if in_path {
+                    count += 1;
+                    in_path = false;
+                }
+            } else {
+                in_path = true;
+            }
+        }
+    }
+    if in_path {
+        count += 1;
+    }
+
+    let status = child.wait().ok()?;
+    status.success().then_some(count)
+}
+
 pub fn run(args: &[OsString]) -> ExitCode {
     let cfg = Config::from_env();
     let tool: &OsStr = OsStr::new("fd");
     let args = fd_strip_color_args(args);
+    let (max_results, args_uncapped) = fd_parse_max_results(&args);
 
     if !fd_x_supported(&args) {
         let mut pass_args: Vec<OsString> = vec![OsString::from("--color=never")];
@@ -113,7 +201,23 @@ pub fn run(args: &[OsString]) -> ExitCode {
     }
 
     let paths = split_nul_paths(&out.stdout);
-    let total = paths.len();
+    let returned = paths.len();
+    let mut total = returned;
+    let mut unseen: usize = 0;
+
+    if let Some(max_results) = max_results {
+        if returned == max_results {
+            let mut count_args: Vec<OsString> =
+                vec![OsString::from("--color=never"), OsString::from("-0")];
+            count_args.extend_from_slice(&args_uncapped);
+            if let Some(counted) = count_nul_paths_stream(tool, &count_args) {
+                if counted >= returned {
+                    total = counted;
+                    unseen = counted - returned;
+                }
+            }
+        }
+    }
 
     let mut rows: Vec<(String, PathBuf)> = paths
         .into_iter()
@@ -147,11 +251,18 @@ pub fn run(args: &[OsString]) -> ExitCode {
         }
     }
 
-    let omitted = total.saturating_sub(shown);
-    println!(
+    let omitted = returned.saturating_sub(shown);
+    print!(
         "@meta\ttool=fd-x\ttotal={}\tprinted={}\tomitted={}",
         total, shown, omitted
     );
+    if let Some(max_results) = max_results {
+        print!(
+            "\tmax_results={}\treturned={}\tunseen={}",
+            max_results, returned, unseen
+        );
+    }
+    println!();
 
     eprint!("{}", String::from_utf8_lossy(&out.stderr));
     exit_code_from_status(out.status)
