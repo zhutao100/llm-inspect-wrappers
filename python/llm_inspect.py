@@ -588,6 +588,9 @@ def main_rg_filelist(args: list[str]) -> int:
 
     try:
         paths = parse_nul_paths(cp.stdout)
+        if not paths:
+            sys.stderr.buffer.write(cp.stderr)
+            return int(cp.returncode)
         out = render_file_table("rg-x", paths, max_rows=CFG.max_fd_rows, mode="filelist")
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
@@ -643,6 +646,10 @@ def main_rg_json(args: list[str]) -> int:
                 grp.shown_lines.append(render_rg_match_line(line_no, col_no, line_text))
             else:
                 grp.omitted_lines += 1
+
+        if not groups_by_path:
+            sys.stderr.buffer.write(cp.stderr)
+            return int(cp.returncode)
 
         all_paths = sorted(groups_by_path.keys())
         if capped:

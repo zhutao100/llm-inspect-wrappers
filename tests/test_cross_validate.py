@@ -199,6 +199,16 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertNotIn("@meta\ttool=fd-x", cp.stdout)
                 self.assertNotIn("\\n", cp.stdout)
 
+    def test_rg_x_no_match_emits_empty_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "hay.txt").write_text("hay here\n", encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "needle", cwd=root)
+                self.assertEqual(cp.returncode, 1, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertEqual(cp.stdout, "", f"{impl.name} stdout:\n{cp.stdout}")
+
     def test_rg_x_match_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

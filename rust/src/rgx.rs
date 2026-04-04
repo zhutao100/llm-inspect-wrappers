@@ -122,6 +122,9 @@ fn render_file_table(
     status: ExitCode,
 ) -> ExitCode {
     let total = paths.len();
+    if total == 0 {
+        return status;
+    }
     let mut rows: Vec<(String, PathBuf)> = paths
         .into_iter()
         .map(|p| {
@@ -325,6 +328,11 @@ pub fn run(args: &[OsString]) -> ExitCode {
 
     let mut all_paths: Vec<PathBuf> = groups.keys().cloned().collect();
     all_paths.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+
+    if all_paths.is_empty() {
+        eprint!("{}", String::from_utf8_lossy(&out.stderr));
+        return code;
+    }
 
     let shown_paths: Vec<PathBuf> = if capped {
         all_paths.into_iter().take(cfg.max_rg_files).collect()
