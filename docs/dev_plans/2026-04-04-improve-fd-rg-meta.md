@@ -57,6 +57,13 @@ You selected:
   - Pros: cheap; tells you if there’s at least one more.
   - Cons: still no true total.
 
+- Option C (Considered, Dropped): always run uncapped and “take first N + count the rest”
+  - Idea: run canonical `fd ...` **without** `--max-results`; keep the first N paths for printing, and just count the remaining NUL-separated entries to compute a true total.
+  - Why dropped: **not semantically equivalent** to `fd --max-results N`.
+    - In practice, `fd --max-results N` can return a different set/order of N paths than “the first N from an uncapped run” (because `--max-results` makes `fd` quit early during traversal).
+    - This wrapper aims to preserve canonical tool semantics; changing which paths are returned under user-provided `--max-results` is a behavioral change, not just a meta/totals fix.
+    - Example observed with `fd 10.4.2` in this repo: uncapped `fd -tf` includes `./LICENSE` in the first 10, but `fd -tf --max-results 10` does not.
+
 ## Output Contract Changes (Decision-Complete)
 
 ### 1) `rg-x`: suppress meta on zero results (match mode + filelist mode)
