@@ -1,0 +1,6 @@
+id = "liw.release"
+title = "Release and CI"
+tags = ["ci", "release"]
+entrypoints = [".github/workflows/", "scripts/"]
+edit_points = [".github/workflows/ci.yml", ".github/workflows/kb-ci.yml", ".github/workflows/release.yml", "scripts/package_release.sh", "scripts/release_local.sh"]
+related_facts = ["fact:v1:liw.release.artifacts"]

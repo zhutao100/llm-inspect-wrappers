@@ -39,3 +39,13 @@ repos:
         entry: python scripts/check_repo_hygiene.py
         language: python
         types: [text]
+
+  - repo: local
+    hooks:
+      - id: kb-gate
+        name: kb gate (staged)
+        language: system
+        entry: bash kb/tooling/kb-pre-commit.sh
+        pass_filenames: false
+        always_run: true
+        require_serial: true

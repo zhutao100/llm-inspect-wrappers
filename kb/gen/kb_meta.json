@@ -1,0 +1,1 @@
+{"kb_format_version":1,"schemas":[{"name":"kb/gen/deps.jsonl","version":1,"required":true},{"name":"kb/gen/symbols.jsonl","version":1,"required":true},{"name":"kb/gen/tree.jsonl","version":1,"required":true},{"name":"kb/gen/xrefs.jsonl","version":1,"required":false}]}

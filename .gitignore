@@ -15,3 +15,11 @@ venv/
 # Tooling
 /.tmp/
 /dist/
+
+# kb-tool (local-only)
+
+.kb-tool/
+
+kb/cache/
+
+kb/.tmp/

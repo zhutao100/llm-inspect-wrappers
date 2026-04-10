@@ -1,0 +1,6 @@
+id = "liw.rust"
+title = "Rust wrappers"
+tags = ["rust"]
+entrypoints = ["rust/", "rust/README.md", "rust/src/"]
+edit_points = ["rust/src/fdx.rs", "rust/src/gate.rs", "rust/src/main.rs", "rust/src/rgx.rs", "rust/src/sedx.rs"]
+related_facts = ["fact:v1:liw.env.vars", "fact:v1:liw.wrapper.contract"]

@@ -1,0 +1,57 @@
+[[rule]]
+id = "liw.bash"
+when_path_prefix = "bash/"
+require_module_card = "liw.bash"
+
+[[rule]]
+id = "liw.bash.core"
+when_path_prefix = "bash/xwrap"
+require_module_card = "liw.bash"
+require_fact_types = ["env_vars", "wrapper_contract"]
+require_session_capsule = true
+
+[[rule]]
+id = "liw.docs"
+when_path_prefix = "docs/"
+require_module_card = "liw.docs"
+
+[[rule]]
+id = "liw.python"
+when_path_prefix = "python/"
+require_module_card = "liw.python"
+
+[[rule]]
+id = "liw.python.core"
+when_path_prefix = "python/llm_inspect.py"
+require_module_card = "liw.python"
+require_fact_types = ["env_vars", "wrapper_contract"]
+require_session_capsule = true
+
+[[rule]]
+id = "liw.release.scripts"
+when_path_prefix = "scripts/"
+require_module_card = "liw.release"
+require_fact_types = ["release_artifacts"]
+
+[[rule]]
+id = "liw.release.workflows"
+when_path_prefix = ".github/workflows/"
+require_module_card = "liw.release"
+require_fact_types = ["release_artifacts"]
+
+[[rule]]
+id = "liw.rust"
+when_path_prefix = "rust/"
+require_module_card = "liw.rust"
+
+[[rule]]
+id = "liw.rust.core"
+when_path_prefix = "rust/src/"
+require_module_card = "liw.rust"
+require_fact_types = ["env_vars", "wrapper_contract"]
+require_session_capsule = true
+
+[[rule]]
+id = "liw.tests"
+when_path_prefix = "tests/"
+require_module_card = "liw.tests"

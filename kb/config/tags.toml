@@ -1,0 +1,31 @@
+[[tag]]
+id = "bash"
+description = "Bash implementation"
+
+[[tag]]
+id = "ci"
+description = "CI workflows"
+
+[[tag]]
+id = "docs"
+description = "Docs and contracts"
+
+[[tag]]
+id = "kb"
+description = "kb workflow"
+
+[[tag]]
+id = "python"
+description = "Python implementation"
+
+[[tag]]
+id = "release"
+description = "Packaging and release tooling"
+
+[[tag]]
+id = "rust"
+description = "Rust implementation"
+
+[[tag]]
+id = "tests"
+description = "Cross-validation tests"
