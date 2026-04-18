@@ -22,6 +22,9 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
 
 ## Invariants (treat as contract)
 
+- the metadata output by the wrappers is free-text to be interpreted by LLMs, no format contract; when updating/fine-tuning the metadata,
+  - make clear and optimal breaking changes to the metadata to improve LLM interpreting efficiency, no backwards compatibility, no effort to preserve old metadata shapes.
+  - update the test expectations accordingly.
 - Output formats must stay consistent across implementations; `tests/` is the living spec.
 - Bash must remain compatible with macOS `/bin/bash` 3.2 (no Bash 4+ features like associative arrays, no `lastpipe`).
 - Preserve canonical semantics: if an `fd`/`rg` flag changes the output shape (context, replacements, custom formats, etc.), passthrough.
