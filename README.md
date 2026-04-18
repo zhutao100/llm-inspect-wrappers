@@ -25,7 +25,8 @@ For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFI
 
 - Regular files: `path<TAB>bytes=N<TAB>lines=M`
 - Non-regular (dir/symlink/other/missing): `path` (no extra fields)
-- Meta line: `@meta<TAB>tool=...<TAB>total=...<TAB>printed=...<TAB>omitted=...` (plus `mode=...` when applicable)
+- Meta line: `@meta<TAB>tool=...<TAB>rows=...<TAB>[shown_rows=...]` (plus `mode=...` when applicable)
+  - When present, `shown_rows` indicates wrapper truncation. Use `returned_rows` (when present) as the pre-wrapper row count; otherwise use `rows`.
 
 Help/version flags are passed through without wrapper post-processing (canonical tool output, original newlines, no `@meta`):
 `-h`, `--help`, `-V`, `--version`.
@@ -35,12 +36,12 @@ Examples:
 ```bash
 fd-x -tf
 # short.txt	bytes=11	lines=1
-# @meta	tool=fd-x	total=1	printed=1	omitted=0
+# @meta	tool=fd-x	rows=1
 
 fd-x -td
 # src/
 # tests/
-# @meta	tool=fd-x	total=2	printed=2	omitted=0
+# @meta	tool=fd-x	rows=2
 ```
 
 `sed-x` prints the selected range, then a single `@meta` line.

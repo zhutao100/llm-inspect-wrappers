@@ -157,18 +157,15 @@ fn render_file_table(
         }
     }
 
-    let omitted = total.saturating_sub(shown);
     if let Some(mode) = mode {
-        println!(
-            "@meta\ttool={}\tmode={}\ttotal={}\tprinted={}\tomitted={}",
-            tool, mode, total, shown, omitted
-        );
+        print!("@meta\ttool={}\tmode={}\trows={}", tool, mode, total);
     } else {
-        println!(
-            "@meta\ttool={}\ttotal={}\tprinted={}\tomitted={}",
-            tool, total, shown, omitted
-        );
+        print!("@meta\ttool={}\trows={}", tool, total);
     }
+    if shown < total {
+        print!("\tshown_rows={}", shown);
+    }
+    println!();
 
     status
 }
@@ -342,7 +339,6 @@ pub fn run(args: &[OsString]) -> ExitCode {
 
     let total_files = groups.len() as u64;
     let printed_files = shown_paths.len() as u64;
-    let omitted_files = total_files.saturating_sub(printed_files);
 
     let total_match_lines_all: u64 = std::cmp::max(
         total_match_lines,
@@ -366,24 +362,22 @@ pub fn run(args: &[OsString]) -> ExitCode {
         if g.omitted_lines > 0 {
             if meta.kind == PathKind::File {
                 println!(
-                    "@file\tpath={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}\tomitted={}",
+                    "@file\tpath={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}",
                     escape_field(&path_s),
                     bytes,
                     lines,
                     g.match_lines,
-                    g.shown_lines.len(),
-                    g.omitted_lines
+                    g.shown_lines.len()
                 );
             } else {
                 println!(
-                    "@file\tpath={}\tkind={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}\tomitted={}",
+                    "@file\tpath={}\tkind={}\tbytes={}\tlines={}\tmatch_lines={}\tshown={}",
                     escape_field(&path_s),
                     meta.kind.as_str(),
                     bytes,
                     lines,
                     g.match_lines,
-                    g.shown_lines.len(),
-                    g.omitted_lines
+                    g.shown_lines.len()
                 );
             }
         } else if meta.kind == PathKind::File {
@@ -409,17 +403,17 @@ pub fn run(args: &[OsString]) -> ExitCode {
         printed_match_lines += g.shown_lines.len() as u64;
     }
 
-    let omitted_match_lines = total_match_lines_all.saturating_sub(printed_match_lines);
-
-    println!(
-        "@meta\ttool=rg-x\tmode=match\tfiles={}\tprinted_files={}\tomitted_files={}\tmatch_lines={}\tprinted_match_lines={}\tomitted_match_lines={}",
-        total_files,
-        printed_files,
-        omitted_files,
-        total_match_lines_all,
-        printed_match_lines,
-        omitted_match_lines
+    print!(
+        "@meta\ttool=rg-x\tmode=match\tfiles={}\tmatch_lines={}",
+        total_files, total_match_lines_all
     );
+    if printed_files < total_files {
+        print!("\tshown_files={}", printed_files);
+    }
+    if printed_match_lines < total_match_lines_all {
+        print!("\tshown_match_lines={}", printed_match_lines);
+    }
+    println!();
 
     eprint!("{}", String::from_utf8_lossy(&out.stderr));
     code

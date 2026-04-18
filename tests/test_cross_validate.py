@@ -201,11 +201,26 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 rows, meta = parse_file_table(cp.stdout)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertEqual(meta.get("max_results"), "2")
-                self.assertEqual(meta.get("returned"), "2")
-                self.assertEqual(meta.get("total"), "5")
-                self.assertEqual(meta.get("unseen"), "3")
-                self.assertEqual(meta.get("printed"), "2")
-                self.assertEqual(meta.get("omitted"), "0")
+                self.assertEqual(meta.get("returned_rows"), "2")
+                self.assertEqual(meta.get("rows"), "5")
+                self.assertEqual(int(meta.get("rows", "0")) - int(meta.get("returned_rows", "0")), 3)
+                self.assertNotIn("shown_rows", meta)
+                self.assertEqual(len(rows), 2)
+
+    def test_fd_x_emits_shown_rows_when_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i in range(5):
+                (root / f"f{i}.txt").write_text("x\n", encoding="utf-8")
+            env = {"LLM_X_MAX_FD_ROWS": "2"}
+
+            for impl in self.impls:
+                cp = impl.run("fd-x", "-tf", cwd=root, env=env)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "fd-x")
+                self.assertEqual(meta.get("rows"), "5")
+                self.assertEqual(meta.get("shown_rows"), "2")
                 self.assertEqual(len(rows), 2)
 
     def test_fd_x_help_is_passthrough(self) -> None:
@@ -289,8 +304,8 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertIn("many.txt", matches)
                 self.assertEqual(len(matches["many.txt"]), 30)
                 self.assertEqual(int(meta.get("match_lines", "0")), 30)
-                self.assertEqual(int(meta.get("printed_match_lines", "0")), 30)
-                self.assertEqual(int(meta.get("omitted_match_lines", "0")), 0)
+                self.assertNotIn("shown_files", meta)
+                self.assertNotIn("shown_match_lines", meta)
 
     def test_rg_x_capped_when_over_no_omit_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -310,11 +325,35 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertNotIn("hits", headers["many.txt"])
                 self.assertEqual(headers["many.txt"].get("match_lines"), "30")
                 self.assertEqual(headers["many.txt"].get("shown"), "20")
-                self.assertEqual(headers["many.txt"].get("omitted"), "10")
+                self.assertNotIn("omitted", headers["many.txt"])
+                self.assertEqual(
+                    int(headers["many.txt"].get("match_lines", "0")) - int(headers["many.txt"].get("shown", "0")),
+                    10,
+                )
                 self.assertEqual(len(matches["many.txt"]), 20)
                 self.assertEqual(int(meta.get("match_lines", "0")), 30)
-                self.assertEqual(int(meta.get("printed_match_lines", "0")), 20)
-                self.assertEqual(int(meta.get("omitted_match_lines", "0")), 10)
+                self.assertNotIn("shown_files", meta)
+                self.assertEqual(int(meta.get("shown_match_lines", "0")), 20)
+
+    def test_rg_x_file_cap_emits_shown_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.txt").write_text("needle\n", encoding="utf-8")
+            (root / "b.txt").write_text("needle\n", encoding="utf-8")
+            env = {"LLM_X_MAX_RG_NO_OMIT_MATCH_LINES": "0", "LLM_X_MAX_RG_FILES": "1"}
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "needle", cwd=root, env=env)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertEqual(meta.get("files"), "2")
+                self.assertEqual(meta.get("match_lines"), "2")
+                self.assertEqual(meta.get("shown_files"), "1")
+                self.assertEqual(meta.get("shown_match_lines"), "1")
+                self.assertEqual(len(headers), 1)
+                self.assertEqual(sum(len(v) for v in matches.values()), 1)
 
     def test_rg_x_filelist_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -358,6 +397,23 @@ class TestCrossValidateImplementations(unittest.TestCase):
                     self.assertEqual(row.get("kind", "file"), "file")
                     self.assertEqual(int(row["bytes"]), expected_bytes)
                     self.assertEqual(int(row["lines"]), expected_lines)
+
+    def test_rg_x_filelist_emits_shown_rows_when_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i in range(5):
+                (root / f"f{i}.txt").write_text("needle\n", encoding="utf-8")
+            env = {"LLM_X_MAX_FD_ROWS": "2"}
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "filelist")
+                self.assertEqual(meta.get("rows"), "5")
+                self.assertEqual(meta.get("shown_rows"), "2")
+                self.assertEqual(len(rows), 2)
 
     def test_sed_x_range_read_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:

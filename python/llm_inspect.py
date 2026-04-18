@@ -248,7 +248,7 @@ def render_file_table(
 ) -> str:
     total_in = len(paths)
     shown = sorted(paths)[:max_rows]
-    omitted = total_in - len(shown)
+    wrapper_truncated = len(shown) < total_in
     total = total_override if total_override is not None else total_in
 
     # Only collect metadata for rows we will print (line counts can be expensive on large repos).
@@ -267,9 +267,9 @@ def render_file_table(
     meta_fields = [f"@meta\ttool={tool}"]
     if mode is not None:
         meta_fields.append(f"mode={mode}")
-    meta_fields.append(f"total={total}")
-    meta_fields.append(f"printed={len(shown)}")
-    meta_fields.append(f"omitted={omitted}")
+    meta_fields.append(f"rows={total}")
+    if wrapper_truncated:
+        meta_fields.append(f"shown_rows={len(shown)}")
     if meta_extra:
         meta_fields.extend([f"{k}={v}" for k, v in meta_extra])
     out.append("\t".join(meta_fields))
@@ -569,20 +569,17 @@ def main_fd(args: list[str]) -> int:
         paths = parse_nul_paths(cp.stdout)
         returned = len(paths)
         total = returned
-        unseen = 0
 
         if max_results is not None and returned == max_results:
             counted = count_nul_paths_stream([real, "--color=never", "-0", *args_uncapped])
             if counted is not None and counted >= returned:
                 total = counted
-                unseen = counted - returned
 
         meta_extra: list[tuple[str, str]] | None = None
         if max_results is not None:
             meta_extra = [
                 ("max_results", str(max_results)),
-                ("returned", str(returned)),
-                ("unseen", str(unseen)),
+                ("returned_rows", str(returned)),
             ]
 
         out = render_file_table("fd-x", paths, max_rows=CFG.max_fd_rows, total_override=total, meta_extra=meta_extra)
@@ -767,12 +764,7 @@ def main_rg_json(args: list[str]) -> int:
             return int(cp.returncode)
 
         all_paths = sorted(groups_by_path.keys())
-        if capped:
-            shown_paths = all_paths[: CFG.max_rg_files]
-            omitted_files = len(all_paths) - len(shown_paths)
-        else:
-            shown_paths = all_paths
-            omitted_files = 0
+        shown_paths = all_paths[: CFG.max_rg_files] if capped else all_paths
 
         metas = collect_meta(shown_paths)
 
@@ -790,23 +782,20 @@ def main_rg_json(args: list[str]) -> int:
                 *(["kind=" + meta.kind] if meta.kind != "file" else []),
                 f"bytes={b}",
                 f"lines={l}",
-                *(
-                    [f"match_lines={g.match_lines}", f"shown={len(g.shown_lines)}", f"omitted={g.omitted_lines}"]
-                    if g.omitted_lines
-                    else []
-                ),
+                *([f"match_lines={g.match_lines}", f"shown={len(g.shown_lines)}"] if g.omitted_lines else []),
             ]
             out_lines.append("\t".join(file_parts))
             out_lines.extend(g.shown_lines)
             printed_match_lines += len(g.shown_lines)
 
-        omitted_match_lines = total_match_lines_all - printed_match_lines
-
-        out_lines.append(
-            f"@meta\ttool=rg-x\tmode=match\tfiles={len(all_paths)}\tprinted_files={len(shown_paths)}"
-            f"\tomitted_files={omitted_files}\tmatch_lines={total_match_lines_all}\tprinted_match_lines={printed_match_lines}"
-            f"\tomitted_match_lines={omitted_match_lines}"
-        )
+        meta_parts = [
+            "@meta\ttool=rg-x\tmode=match",
+            f"files={len(all_paths)}",
+            f"match_lines={total_match_lines_all}",
+            *(["shown_files=" + str(len(shown_paths))] if len(shown_paths) < len(all_paths) else []),
+            *(["shown_match_lines=" + str(printed_match_lines)] if printed_match_lines < total_match_lines_all else []),
+        ]
+        out_lines.append("\t".join(meta_parts))
         sys.stdout.write("\n".join(out_lines) + "\n")
         sys.stderr.buffer.write(cp.stderr)
         return int(cp.returncode)

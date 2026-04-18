@@ -4,8 +4,8 @@ These wrappers intentionally **cap what they print** to avoid flooding an LLM co
 
 Key idea:
 - **Printed output is bounded.**
-- **Totals remain informative** (`total`, `files`, `match_lines`, etc.).
-- **Omitted output is not an error**; it is a deliberate truncation with explicit counts.
+- **Totals remain informative** (`rows`, `files`, `match_lines`, etc.).
+- **Omitted output is not an error**; it is a deliberate truncation with explicit totals (and optional `shown_*` fields when truncation occurs).
 
 All wrappers are **best-effort**: if an invocation is unsupported or parsing fails, they **passthrough** to the canonical tool output (which may be unbounded and will not include wrapper `@meta` lines).
 
@@ -54,18 +54,17 @@ Tuning:
 ### Meta meaning
 Trailer line:
 ```
-@meta	tool=fd-x	total=T	printed=P	omitted=O	[ max_results=N	returned=R	unseen=U ]
+@meta	tool=fd-x	rows=T	[ shown_rows=P ]	[ max_results=N	returned_rows=R ]
 ```
-- `total`:
+- `rows`:
   - default: total number of paths returned by canonical `fd`.
   - when user passes `--max-results N` and the wrapper can compute an uncapped count: total number of paths `fd` would return **as if `--max-results` were removed** (all other args identical).
-- `printed`: number of rows actually printed (≤ `LLM_X_MAX_FD_ROWS`, and ≤ `returned` when present).
-- `omitted = returned - printed` (or `total - printed` when `returned` is absent): wrapper-only truncation due to `LLM_X_MAX_FD_ROWS`.
+- `shown_rows`: number of rows actually printed (≤ `LLM_X_MAX_FD_ROWS`). Only present when output was truncated by the wrapper.
 
 When `--max-results` is present and successfully parsed, the meta line also includes:
 - `max_results`: the user-provided `--max-results N`.
-- `returned`: number of paths actually returned by `fd` under the user cap.
-- `unseen = total - returned`: paths excluded only due to the user cap.
+- `returned_rows`: number of paths actually returned by `fd` under the user cap.
+  - `rows - returned_rows`: paths excluded only due to the user cap.
 
 ### Notes
 - File metadata (`bytes=...`, `lines=...`) is computed **only for printed rows**.
@@ -83,7 +82,7 @@ When `rg-x` detects a file-list mode (e.g. `-l`, `--files-with-matches`, `--file
 ### Meta meaning
 Trailer line:
 ```
-@meta	tool=rg-x	mode=filelist	total=T	printed=P	omitted=O
+@meta	tool=rg-x	mode=filelist	rows=T	[ shown_rows=P ]
 ```
 If there are **0 rows** (no file paths), `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (typically `1` for “no matches”).
 
@@ -120,31 +119,27 @@ Each printed file group starts with an `@file` line:
 ```
 If per-file match lines were omitted due to `LLM_X_MAX_RG_MATCH_LINES_PER_FILE`, the header also includes:
 ```
-match_lines=M	shown=S	omitted=K
+match_lines=M	shown=S
 ```
 - `shown`: printed match lines for that file (≤ `LLM_X_MAX_RG_MATCH_LINES_PER_FILE`)
-- `omitted`: match lines in that file not printed due to the per-file cap
-- `match_lines = shown + omitted`
+- `match_lines`: total match lines for that file
+  - Omitted match lines are derivable as `match_lines - shown`.
 
 ### Trailer meta fields
 All match-mode output ends with:
 ```
-@meta	tool=rg-x	mode=match	files=F	printed_files=PF	omitted_files=OF	match_lines=ML	printed_match_lines=PML	omitted_match_lines=OML
+@meta	tool=rg-x	mode=match	files=F	match_lines=ML	[ shown_files=PF ]	[ shown_match_lines=PML ]
 ```
 Interpretation:
 - `files`: number of files with at least one match.
-- `printed_files`: number of file groups printed (≤ `LLM_X_MAX_RG_FILES`).
-- `omitted_files = files - printed_files`.
 - `match_lines`: total match lines across **all** matching files.
-- `printed_match_lines`: match lines actually printed (bounded by both caps).
-- `omitted_match_lines = match_lines - printed_match_lines`.
+- `shown_files`: number of file groups printed (≤ `LLM_X_MAX_RG_FILES`). Only present when output was truncated by the wrapper.
+- `shown_match_lines`: match lines actually printed (bounded by both caps). Only present when output was truncated by the wrapper.
+  - When a `shown_*` field is absent, treat it as equal to the corresponding total.
 
 ### Important implications
-- Even when file groups are omitted due to `LLM_X_MAX_RG_FILES`, their matches still contribute to:
-  - `files`
-  - `match_lines`
-  - `omitted_files`
-  - `omitted_match_lines`
+- Even when file groups are omitted due to `LLM_X_MAX_RG_FILES`, their matches still contribute to `files` and `match_lines`.
+- Wrapper omissions are detectable via the presence of `shown_files` / `shown_match_lines` (omitted counts are derivable by subtraction).
 - File byte/LoC metadata is collected **only for printed file groups**.
 
 ---

@@ -203,7 +203,6 @@ pub fn run(args: &[OsString]) -> ExitCode {
     let paths = split_nul_paths(&out.stdout);
     let returned = paths.len();
     let mut total = returned;
-    let mut unseen: usize = 0;
 
     if let Some(max_results) = max_results {
         if returned == max_results {
@@ -213,7 +212,6 @@ pub fn run(args: &[OsString]) -> ExitCode {
             if let Some(counted) = count_nul_paths_stream(tool, &count_args) {
                 if counted >= returned {
                     total = counted;
-                    unseen = counted - returned;
                 }
             }
         }
@@ -251,16 +249,12 @@ pub fn run(args: &[OsString]) -> ExitCode {
         }
     }
 
-    let omitted = returned.saturating_sub(shown);
-    print!(
-        "@meta\ttool=fd-x\ttotal={}\tprinted={}\tomitted={}",
-        total, shown, omitted
-    );
+    print!("@meta\ttool=fd-x\trows={}", total);
+    if shown < returned {
+        print!("\tshown_rows={}", shown);
+    }
     if let Some(max_results) = max_results {
-        print!(
-            "\tmax_results={}\treturned={}\tunseen={}",
-            max_results, returned, unseen
-        );
+        print!("\tmax_results={}\treturned_rows={}", max_results, returned);
     }
     println!();
 

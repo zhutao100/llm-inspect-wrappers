@@ -332,19 +332,19 @@ fd_x() {
     fi
   fi
 
-  local unseen=$((total - returned))
-  if ((unseen < 0)); then
-    unseen=0
-    total="$returned"
-  fi
-
   if ((${#out_rows[@]} > 0)); then
     printf '%s\n' "${out_rows[@]}"
   fi
-  local omitted=$((returned - printed))
-  printf '@meta\ttool=fd-x\ttotal=%s\tprinted=%s\tomitted=%s' "$total" "$printed" "$omitted"
+  if ((total < returned)); then
+    total="$returned"
+  fi
+
+  printf '@meta\ttool=fd-x\trows=%s' "$total"
+  if ((printed < returned)); then
+    printf '\tshown_rows=%s' "$printed"
+  fi
   if ((max_results_set)); then
-    printf '\tmax_results=%s\treturned=%s\tunseen=%s' "$max_results" "$returned" "$unseen"
+    printf '\tmax_results=%s\treturned_rows=%s' "$max_results" "$returned"
   fi
   printf '\n'
   return "$rc"
@@ -453,9 +453,12 @@ rg_x_filelist() {
   if ((${#out_rows[@]} > 0)); then
     printf '%s\n' "${out_rows[@]}"
   fi
-  local omitted=$((total - printed))
   if ((total > 0)); then
-    printf '@meta\ttool=rg-x\tmode=filelist\ttotal=%s\tprinted=%s\tomitted=%s\n' "$total" "$printed" "$omitted"
+    printf '@meta\ttool=rg-x\tmode=filelist\trows=%s' "$total"
+    if ((printed < total)); then
+      printf '\tshown_rows=%s' "$printed"
+    fi
+    printf '\n'
   fi
   return "$rc"
 }
@@ -465,7 +468,6 @@ rg_x_match() {
   local files_printed=0
   local match_lines_total=0
   local match_lines_printed=0
-  local match_lines_omitted=0
 
   local max_files_cap="$MAX_RG_FILES"
   local max_lines_cap="$MAX_RG_MATCH_LINES_PER_FILE"
@@ -498,7 +500,7 @@ rg_x_match() {
           fi
           printf '\tbytes=%s\tlines=%s' "$current_bytes" "$current_lines"
           if ((current_omitted > 0)); then
-            printf '\tmatch_lines=%s\tshown=%s\tomitted=%s' "$current_hits" "${#current_lines_out[@]}" "$current_omitted"
+            printf '\tmatch_lines=%s\tshown=%s' "$current_hits" "${#current_lines_out[@]}"
           fi
         )"
       )
@@ -508,10 +510,9 @@ rg_x_match() {
       done
 
       match_lines_printed=$((match_lines_printed + ${#current_lines_out[@]}))
-      match_lines_omitted=$((match_lines_omitted + current_omitted))
     else
       # Entire file group omitted.
-      match_lines_omitted=$((match_lines_omitted + current_hits))
+      :
     fi
 
     current_path=""
@@ -636,13 +637,16 @@ rg_x_match() {
     printf '%s\n' "${out_lines[@]}"
   fi
 
-  printf '@meta\ttool=rg-x\tmode=match\tfiles=%s\tprinted_files=%s\tomitted_files=%s\tmatch_lines=%s\tprinted_match_lines=%s\tomitted_match_lines=%s\n' \
+  printf '@meta\ttool=rg-x\tmode=match\tfiles=%s\tmatch_lines=%s' \
     "$files_seen" \
-    "$files_printed" \
-    "$((files_seen - files_printed))" \
-    "$match_lines_total" \
-    "$match_lines_printed" \
-    "$match_lines_omitted"
+    "$match_lines_total"
+  if ((files_printed < files_seen)); then
+    printf '\tshown_files=%s' "$files_printed"
+  fi
+  if ((match_lines_printed < match_lines_total)); then
+    printf '\tshown_match_lines=%s' "$match_lines_printed"
+  fi
+  printf '\n'
 
   return "$rc"
 }
