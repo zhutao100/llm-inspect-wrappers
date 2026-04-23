@@ -16,7 +16,12 @@ def have_tools(*names: str) -> bool:
     return all(shutil.which(n) for n in names)
 
 
-def run_wrapped(*args: str, cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_wrapped(
+    *args: str,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    stdin: str = "",
+) -> subprocess.CompletedProcess[str]:
     merged_env = None
     if env is not None:
         merged_env = dict(os.environ)
@@ -25,7 +30,7 @@ def run_wrapped(*args: str, cwd: Path, env: dict[str, str] | None = None) -> sub
         [sys.executable, str(SCRIPT), *args],
         cwd=str(cwd),
         env=merged_env,
-        input="",
+        input=stdin,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -89,7 +94,7 @@ class TestLlmInspectPython(unittest.TestCase):
             rg_conf = root / "ripgrep.conf"
             rg_conf.write_text("--quiet\n", encoding="utf-8")
 
-            cp = run_wrapped("rg-x", "needle", cwd=root, env={"RIPGREP_CONFIG_PATH": str(rg_conf)})
+            cp = run_wrapped("rg-x", "needle", ".", cwd=root, env={"RIPGREP_CONFIG_PATH": str(rg_conf)})
             self.assertIn(cp.returncode, (0, 1), cp.stderr)
 
             lines = [ln for ln in cp.stdout.splitlines() if ln.strip()]
@@ -110,9 +115,18 @@ class TestLlmInspectPython(unittest.TestCase):
             root = Path(td)
             (root / "hay.txt").write_text("hay here\n", encoding="utf-8")
 
-            cp = run_wrapped("rg-x", "needle", cwd=root)
+            cp = run_wrapped("rg-x", "needle", ".", cwd=root)
             self.assertEqual(cp.returncode, 1, cp.stderr)
             self.assertEqual(cp.stdout, "")
+
+    @unittest.skipUnless(have_tools("rg"), "requires rg on PATH")
+    def test_rg_x_reads_stdin_when_piped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cp = run_wrapped("rg-x", "needle", cwd=root, stdin="hay\nneedle here\n")
+            self.assertEqual(cp.returncode, 0, cp.stderr)
+            self.assertIn("@file\tpath=<stdin>", cp.stdout)
+            self.assertIn("2:1:needle here", cp.stdout)
 
     def test_sed_x_range_gates_long_line(self) -> None:
         with tempfile.TemporaryDirectory() as td:

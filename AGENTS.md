@@ -29,7 +29,7 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
 - Bash must remain compatible with macOS `/bin/bash` 3.2 (no Bash 4+ features like associative arrays, no `lastpipe`).
 - Preserve canonical semantics: if an `fd`/`rg` flag changes the output shape (context, replacements, custom formats, etc.), passthrough.
 - Determinism: wrapped `rg` calls ignore `RIPGREP_CONFIG_PATH` (passthrough keeps the original environment).
-- Determinism: wrapped tool captures set `stdin` to `/dev/null` so `rg-x PATTERN` searches the filesystem even when the parent has piped stdin (CI).
+- Stdin semantics: captured `rg` invocations inherit stdin (like canonical `rg`); to force filesystem search in piped/CI contexts, pass an explicit path (e.g. `rg-x PATTERN .`).
 - Avoid committing machine-local paths; `prek` runs `scripts/check_repo_hygiene.py` via `.pre-commit-config.yaml`.
 
 ## Repo-inspection hygiene (for agentic sessions)

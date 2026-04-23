@@ -57,7 +57,7 @@ run_to_fifo() {
     rm -rf "$tmpdir"
     return 2
   fi
-  "$@" </dev/null >"$fifo" &
+  "$@" >"$fifo" &
   pid=$!
   exec 9>&-
 
@@ -570,7 +570,7 @@ rg_x_match() {
   }
 
   local fifo pid tmpdir
-  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --no-heading --line-number --column "$@"; then
+  if ! run_to_fifo env -u RIPGREP_CONFIG_PATH rg --color=never --null --with-filename --no-heading --line-number --column "$@"; then
     exec rg --color=never "$@"
   fi
   fifo="$RUN_FIFO"

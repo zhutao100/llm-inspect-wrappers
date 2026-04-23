@@ -17,7 +17,7 @@ Each implementation provides the same wrapper names:
 - `rg-x` — search + file metadata + long-line gating (match mode)
 - `sed-x` — ranged reads (`sed -n 'a,bp' [file|-]`) + long-line gating + file metadata (or stdin stats)
 
-For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFIG_PATH` (passthrough modes keep the original environment) and run captured commands with `stdin=/dev/null` so `rg-x PATTERN` still searches the filesystem in CI/piped environments.
+For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFIG_PATH` (passthrough modes keep the original environment). Captured invocations inherit stdin like canonical `rg`: if stdin is piped, `rg-x PATTERN` searches stdin; to force filesystem search in piped/CI contexts, pass an explicit path (e.g. `rg-x PATTERN .`).
 
 ## Output format
 

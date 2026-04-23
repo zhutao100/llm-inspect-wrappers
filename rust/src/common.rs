@@ -82,7 +82,7 @@ pub fn cmd_capture(tool: &OsStr, args: &[OsString]) -> Result<Output> {
         .env("LC_ALL", "C")
         .env("LANG", "C")
         .env_remove("RIPGREP_CONFIG_PATH")
-        .stdin(Stdio::null())
+        .stdin(Stdio::inherit())
         .output()?;
     Ok(out)
 }

@@ -105,7 +105,6 @@ def sdecode(b: bytes) -> str:
 def run_capture(argv: list[str]) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         argv,
-        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=False,

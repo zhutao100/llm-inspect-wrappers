@@ -239,7 +239,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             (root / "hay.txt").write_text("hay here\n", encoding="utf-8")
 
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root)
+                cp = impl.run("rg-x", "needle", ".", cwd=root)
                 self.assertEqual(cp.returncode, 1, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertEqual(cp.stdout, "", f"{impl.name} stdout:\n{cp.stdout}")
 
@@ -255,7 +255,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
 
             parsed: dict[str, tuple[dict[str, dict[str, str]], dict[str, list[RgMatch]], dict[str, str]]] = {}
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 parsed[impl.name] = parse_rg(cp.stdout)
 
@@ -294,7 +294,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             (root / "many.txt").write_text("".join("needle\n" for _ in range(30)), encoding="utf-8")
 
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root)
+                cp = impl.run("rg-x", "needle", ".", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
                 headers, matches, meta = parse_rg(cp.stdout)
@@ -314,7 +314,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             env = {"LLM_X_MAX_RG_NO_OMIT_MATCH_LINES": "5"}
 
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
                 headers, matches, meta = parse_rg(cp.stdout)
@@ -343,7 +343,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             env = {"LLM_X_MAX_RG_NO_OMIT_MATCH_LINES": "0", "LLM_X_MAX_RG_FILES": "1"}
 
             for impl in self.impls:
-                cp = impl.run("rg-x", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 headers, matches, meta = parse_rg(cp.stdout)
                 self.assertEqual(meta.get("tool"), "rg-x")
@@ -369,7 +369,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
 
             expected = {"a.txt", "dir/c.txt"}
             for impl in self.impls:
-                cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 rows, meta = parse_file_table(cp.stdout)
                 self.assertEqual(meta.get("tool"), "rg-x")
@@ -378,7 +378,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
 
             # Color flags should not introduce ANSI escapes or break NUL parsing.
             for impl in self.impls:
-                cp = impl.run("rg-x", "--color=always", "-l", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "--color=always", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertNotIn("\x1b", cp.stdout)
                 rows, meta = parse_file_table(cp.stdout)
@@ -391,7 +391,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 expected_bytes = st.st_size
                 expected_lines = (root / rel).read_text(encoding="utf-8").count("\n")
                 for impl in self.impls:
-                    cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
+                    cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
                     rows, _ = parse_file_table(cp.stdout)
                     row = rows[rel]
                     self.assertEqual(row.get("kind", "file"), "file")
@@ -406,7 +406,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             env = {"LLM_X_MAX_FD_ROWS": "2"}
 
             for impl in self.impls:
-                cp = impl.run("rg-x", "-l", "needle", cwd=root, env=env)
+                cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 rows, meta = parse_file_table(cp.stdout)
                 self.assertEqual(meta.get("tool"), "rg-x")
@@ -414,6 +414,48 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(meta.get("rows"), "5")
                 self.assertEqual(meta.get("shown_rows"), "2")
                 self.assertEqual(len(rows), 2)
+
+    def test_rg_x_reads_stdin_when_piped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            stdin = "hay\nneedle here\n"
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "needle", cwd=root, stdin=stdin)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertEqual(meta.get("files"), "1")
+                self.assertEqual(meta.get("match_lines"), "1")
+                self.assertEqual(set(headers.keys()), {"<stdin>"})
+                self.assertEqual(set(matches.keys()), {"<stdin>"})
+
+                m = matches["<stdin>"][0]
+                self.assertEqual(m.line, 2)
+                self.assertEqual(m.col, 1)
+                self.assertIn("needle here", m.body)
+
+    def test_rg_x_reads_patterns_from_stdin(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.txt").write_text("needle here\n", encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "-f", "-", "a.txt", cwd=root, stdin="needle\n")
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertEqual(set(headers.keys()), {"a.txt"})
+                self.assertEqual(set(matches.keys()), {"a.txt"})
+
+                m = matches["a.txt"][0]
+                self.assertEqual(m.line, 1)
+                self.assertEqual(m.col, 1)
+                self.assertIn("needle here", m.body)
 
     def test_sed_x_range_read_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
