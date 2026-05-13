@@ -300,12 +300,12 @@ fd_x() {
   local rc=$?
   rm -rf "$tmpdir"
 
-  if ((rc != 0)); then
-    exec fd --color=never "${argv[@]}"
+  if ((rc != 0 && returned == 0)); then
+    return "$rc"
   fi
 
   local total="$returned"
-  if ((max_results_set)) && ((returned == max_results)); then
+  if ((rc == 0)) && ((max_results_set)) && ((returned == max_results)); then
     local total_uncapped=0
     local fifo2 pid2 tmpdir2 rc2
 
@@ -351,18 +351,38 @@ fd_x() {
 }
 
 rg_should_passthrough() {
+  local after_end_of_options=0
   for a in "$@"; do
+    if ((after_end_of_options)); then
+      continue
+    fi
+    if [[ "$a" == "--" ]]; then
+      after_end_of_options=1
+      continue
+    fi
+
     case "$a" in
-      --json | --passthru | --vimgrep | --null | -0 | -c | --count | --count-matches | -o | --only-matching | -r | --replace | --replace=* | \
+      -h | --help | -V | --version | --type-list | --generate | --generate=* | --pcre2-version | \
+        --json | --passthru | --vimgrep | --null | -0 | --null-data | -q | --quiet | \
+        -c | --count | --count-matches | -o | --only-matching | -r | --replace | --replace=* | \
         -A | -B | -C | --after-context | --before-context | --context | --after-context=* | --before-context=* | --context=* | \
-        --heading | --no-heading | --no-line-number | --no-column | --with-filename | --no-filename | -H | -h)
+        --context-separator | --context-separator=* | --field-context-separator | --field-context-separator=* | \
+        --field-match-separator | --field-match-separator=* | --heading | --no-heading | \
+        -N | --no-line-number | --no-column | -H | --with-filename | -I | --no-filename | \
+        -b | --byte-offset | -M | --max-columns | --max-columns=* | --max-columns-preview | \
+        --path-separator | --path-separator=* | --hyperlink-format | --hyperlink-format=* | \
+        --hostname-bin | --hostname-bin=* | -p | --pretty | --stats | --include-zero | \
+        --trim | -U | --multiline | --multiline-dotall)
         return 0
         ;;
       -*) # conservative: avoid parsing context/replace/count/only-matching bundles
         if [[ "$a" == -A* ]] || [[ "$a" == -B* ]] || [[ "$a" == -C* ]]; then
           return 0
         fi
-        if [[ "$a" == *"0"* ]] || [[ "$a" == *"c"* ]] || [[ "$a" == *"o"* ]]; then
+        if [[ "$a" == *"0"* ]] || [[ "$a" == *"c"* ]] || [[ "$a" == *"o"* ]] ||
+          [[ "$a" == *"N"* ]] || [[ "$a" == *"H"* ]] || [[ "$a" == *"I"* ]] ||
+          [[ "$a" == *"b"* ]] || [[ "$a" == *"M"* ]] || [[ "$a" == *"p"* ]] ||
+          [[ "$a" == *"q"* ]] || [[ "$a" == *"U"* ]]; then
           return 0
         fi
         ;;
@@ -372,13 +392,22 @@ rg_should_passthrough() {
 }
 
 rg_is_filelist_mode() {
+  local after_end_of_options=0
   for a in "$@"; do
+    if ((after_end_of_options)); then
+      continue
+    fi
+    if [[ "$a" == "--" ]]; then
+      after_end_of_options=1
+      continue
+    fi
+
     case "$a" in
-      --files | -l | --files-with-matches | -L | --files-without-match)
+      --files | -l | --files-with-matches | --files-without-match)
         return 0
         ;;
       -*)
-        if [[ "$a" == *"l"* ]] || [[ "$a" == *"L"* ]]; then
+        if [[ "$a" == *"l"* ]]; then
           return 0
         fi
         ;;
@@ -445,10 +474,6 @@ rg_x_filelist() {
   wait "$pid"
   local rc=$?
   rm -rf "$tmpdir"
-
-  if ((rc == 2)); then
-    exec rg --color=never "$@"
-  fi
 
   if ((${#out_rows[@]} > 0)); then
     printf '%s\n' "${out_rows[@]}"
@@ -613,10 +638,6 @@ rg_x_match() {
   wait "$pid"
   local rc=$?
   rm -rf "$tmpdir"
-
-  if ((rc == 2)); then
-    exec rg --color=never "$@"
-  fi
 
   if ((buffering)); then
     max_files_cap=2000000000

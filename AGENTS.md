@@ -4,7 +4,7 @@
 
 Thin, best-effort wrappers around `fd`, `rg`, and ranged `sed` reads that emit LLM-efficient output.
 
-Key rule: **never fail** — for unsupported flags / parse errors / tool failures, passthrough to the canonical tool output.
+Key rule: **never fail** — for unsupported flags / parse errors / tool failures, passthrough to the canonical tool output; for parseable partial results with diagnostics, keep wrapped stdout, forward stderr once, and return the canonical exit code.
 
 ## Layout
 

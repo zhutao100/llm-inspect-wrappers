@@ -192,20 +192,20 @@ pub fn run(args: &[OsString]) -> ExitCode {
         }
     };
 
-    if !out.status.success() {
-        return crate::common::replay_raw(&out);
-    }
-
     if !out.stdout.is_empty() && !out.stdout.contains(&0) {
         return crate::common::replay_raw(&out);
     }
 
     let paths = split_nul_paths(&out.stdout);
+    if !out.status.success() && paths.is_empty() {
+        return crate::common::replay_raw(&out);
+    }
+
     let returned = paths.len();
     let mut total = returned;
 
     if let Some(max_results) = max_results {
-        if returned == max_results {
+        if out.status.success() && returned == max_results {
             let mut count_args: Vec<OsString> =
                 vec![OsString::from("--color=never"), OsString::from("-0")];
             count_args.extend_from_slice(&args_uncapped);

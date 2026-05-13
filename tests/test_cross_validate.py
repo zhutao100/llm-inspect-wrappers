@@ -233,6 +233,22 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertNotIn("@meta\ttool=fd-x", cp.stdout)
                 self.assertNotIn("\\n", cp.stdout)
 
+    def test_fd_x_keeps_wrapped_rows_with_path_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "ok").mkdir()
+            (root / "ok" / "one.txt").write_text("needle\n", encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("fd-x", "-tf", ".", "ok", "missing", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertIn("missing", cp.stderr)
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "fd-x")
+                self.assertEqual(meta.get("rows"), "1")
+                self.assertIn("ok/one.txt", rows)
+                self.assertNotIn("\x00", cp.stdout)
+
     def test_rg_x_no_match_emits_empty_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -242,6 +258,45 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "needle", ".", cwd=root)
                 self.assertEqual(cp.returncode, 1, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertEqual(cp.stdout, "", f"{impl.name} stdout:\n{cp.stdout}")
+
+    def test_rg_x_output_shape_flags_are_passthrough(self) -> None:
+        passthrough_cases = [
+            ("--help",),
+            ("--version",),
+            ("--no-line-number", "needle", "."),
+            ("-N", "needle", "."),
+            ("--heading", "needle", "."),
+            ("--no-filename", "needle", "."),
+        ]
+
+        for args in passthrough_cases:
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                (root / "one.txt").write_text("needle\n", encoding="utf-8")
+                canonical = subprocess.run(
+                    ["rg", "--color=never", *args],
+                    cwd=str(root),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                for impl in self.impls:
+                    cp = impl.run("rg-x", *args, cwd=root)
+                    self.assertEqual(cp.returncode, canonical.returncode, impl.name)
+                    self.assertEqual(cp.stdout, canonical.stdout, impl.name)
+                    self.assertEqual(cp.stderr, canonical.stderr, impl.name)
+                    self.assertNotIn("@meta\ttool=rg-x", cp.stdout)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "one.txt").write_text("needle\n", encoding="utf-8")
+            for impl in self.impls:
+                cp = impl.run("rg-x", "--stats", "needle", ".", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
+                self.assertIn("matched lines", cp.stdout)
+                self.assertNotIn("@meta\ttool=rg-x", cp.stdout)
 
     def test_rg_x_match_mode_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -287,6 +342,36 @@ class TestCrossValidateImplementations(unittest.TestCase):
 
                 self.assertEqual(lm.line, 1)
                 self.assertIn("rg-x truncated", lm.body)
+
+    def test_rg_x_match_mode_keeps_wrapped_matches_with_path_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "protocol" / "src").mkdir(parents=True)
+            (root / "protocol" / "src" / "protocol.rs").write_text(
+                "x\npub enum Op {\n}\n    UserTurn {\n}\n",
+                encoding="utf-8",
+            )
+            args = (
+                "-n",
+                "pub enum Op|struct UserTurn|UserTurn \\{",
+                "protocol/src",
+                "core/src/protocol",
+                "-g",
+                "*.rs",
+            )
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", *args, cwd=root)
+                self.assertEqual(cp.returncode, 2, f"{impl.name} stdout:\n{cp.stdout}\nstderr:\n{cp.stderr}")
+                self.assertIn("core/src/protocol", cp.stderr)
+                self.assertEqual(cp.stderr.count("No such file or directory"), 1)
+                self.assertNotIn('{"type":"match"', cp.stdout)
+
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertEqual(set(headers.keys()), {"protocol/src/protocol.rs"})
+                self.assertEqual([m.line for m in matches["protocol/src/protocol.rs"]], [2, 4])
 
     def test_rg_x_no_omit_when_total_is_small(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -415,6 +500,40 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(meta.get("shown_rows"), "2")
                 self.assertEqual(len(rows), 2)
 
+    def test_rg_x_follow_symlink_short_flag_stays_match_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "target").mkdir()
+            (root / "target" / "one.txt").write_text("needle\n", encoding="utf-8")
+            (root / "link").symlink_to(root / "target", target_is_directory=True)
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "-L", "needle", "link", cwd=root)
+                self.assertEqual(cp.returncode, 0, f"{impl.name} stdout:\n{cp.stdout}\nstderr:\n{cp.stderr}")
+                headers, matches, meta = parse_rg(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "match")
+                self.assertIn("link/one.txt", headers)
+                self.assertEqual([m.line for m in matches["link/one.txt"]], [1])
+
+    def test_rg_x_filelist_keeps_wrapped_rows_with_path_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "ok").mkdir()
+            (root / "ok" / "one.txt").write_text("needle\n", encoding="utf-8")
+
+            for impl in self.impls:
+                cp = impl.run("rg-x", "-l", "needle", "ok", "missing", cwd=root)
+                self.assertEqual(cp.returncode, 2, f"{impl.name} stdout:\n{cp.stdout}\nstderr:\n{cp.stderr}")
+                self.assertIn("missing", cp.stderr)
+                self.assertEqual(cp.stderr.count("No such file or directory"), 1)
+                self.assertNotIn("\x00", cp.stdout)
+                rows, meta = parse_file_table(cp.stdout)
+                self.assertEqual(meta.get("tool"), "rg-x")
+                self.assertEqual(meta.get("mode"), "filelist")
+                self.assertEqual(meta.get("rows"), "1")
+                self.assertIn("ok/one.txt", rows)
+
     def test_rg_x_reads_stdin_when_piped(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -467,6 +586,26 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("sed-x truncated line=1", cp.stdout)
                 self.assertIn("@meta\ttool=sed-x\tpath=long.json", cp.stdout)
+
+    def test_sed_x_non_file_input_is_passthrough(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "dir").mkdir()
+            canonical = subprocess.run(
+                ["sed", "-n", "1,1p", "dir"],
+                cwd=str(root),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            for impl in self.impls:
+                cp = impl.run("sed-x", "-n", "1,1p", "dir", cwd=root)
+                self.assertEqual(cp.returncode, canonical.returncode, impl.name)
+                self.assertEqual(cp.stdout, canonical.stdout, impl.name)
+                self.assertEqual(cp.stderr, canonical.stderr, impl.name)
+                self.assertNotIn("@meta\ttool=sed-x", cp.stdout)
 
     def test_sed_x_stdin_range_read_consistent(self) -> None:
         with tempfile.TemporaryDirectory() as td:

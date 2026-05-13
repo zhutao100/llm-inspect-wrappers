@@ -19,6 +19,8 @@ Each implementation provides the same wrapper names:
 
 For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFIG_PATH` (passthrough modes keep the original environment). Captured invocations inherit stdin like canonical `rg`: if stdin is piped, `rg-x PATTERN` searches stdin; to force filesystem search in piped/CI contexts, pass an explicit path (e.g. `rg-x PATTERN .`).
 
+If the underlying tool reports diagnostics while still producing parseable rows or matches, the wrappers keep the LLM-friendly output, forward stderr once, and return the canonical exit code. Flags that materially change `rg` output shape (context, replacement, headings, no line numbers, stats, etc.) are passed through.
+
 ## Output format
 
 `fd-x` (and `rg-x` in filelist modes like `rg-x -l ...`) emit a file table followed by a single `@meta` line.

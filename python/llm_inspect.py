@@ -558,18 +558,18 @@ def main_fd(args: list[str]) -> int:
     max_results, args_uncapped = fd_parse_max_results(args)
 
     cp = run_capture([real, "--color=never", "-0", *args])
-    if cp.returncode != 0:
-        return replay_raw(cp)
-
     if cp.stdout and b"\x00" not in cp.stdout:
         return replay_raw(cp)
 
     try:
         paths = parse_nul_paths(cp.stdout)
+        if cp.returncode != 0 and not paths:
+            return replay_raw(cp)
+
         returned = len(paths)
         total = returned
 
-        if max_results is not None and returned == max_results:
+        if cp.returncode == 0 and max_results is not None and returned == max_results:
             counted = count_nul_paths_stream([real, "--color=never", "-0", *args_uncapped])
             if counted is not None and counted >= returned:
                 total = counted
@@ -594,11 +594,21 @@ def main_fd(args: list[str]) -> int:
 # ------------------------------------------------------------------------------
 
 RG_PASSTHROUGH_EXACT = {
+    "-h",
+    "--help",
+    "-V",
+    "--version",
+    "--type-list",
+    "--generate",
+    "--pcre2-version",
     "--json",
     "--passthru",
     "--vimgrep",
     "--null",
     "-0",
+    "--null-data",
+    "-q",
+    "--quiet",
     "-A",
     "-B",
     "-C",
@@ -612,14 +622,54 @@ RG_PASSTHROUGH_EXACT = {
     "--after-context",
     "--before-context",
     "--context",
+    "--context-separator",
+    "--field-context-separator",
+    "--field-match-separator",
+    "--heading",
+    "--no-heading",
+    "-N",
+    "--no-line-number",
+    "--no-column",
+    "-H",
+    "--with-filename",
+    "-I",
+    "--no-filename",
+    "-b",
+    "--byte-offset",
+    "-M",
+    "--max-columns",
+    "--max-columns-preview",
+    "--path-separator",
+    "--hyperlink-format",
+    "--hostname-bin",
+    "-p",
+    "--pretty",
+    "--stats",
+    "--include-zero",
+    "--trim",
+    "-U",
+    "--multiline",
+    "--multiline-dotall",
 }
-RG_PASSTHROUGH_PREFIX = ("--replace=", "--after-context=", "--before-context=", "--context=")
+RG_PASSTHROUGH_PREFIX = (
+    "--generate=",
+    "--replace=",
+    "--after-context=",
+    "--before-context=",
+    "--context=",
+    "--context-separator=",
+    "--field-context-separator=",
+    "--field-match-separator=",
+    "--max-columns=",
+    "--path-separator=",
+    "--hyperlink-format=",
+    "--hostname-bin=",
+)
 
 RG_FILELIST_EXACT = {
     "--files",
     "-l",
     "--files-with-matches",
-    "-L",
     "--files-without-match",
 }
 
@@ -663,20 +713,24 @@ def rg_strip_color_args(args: list[str]) -> list[str]:
 
 def rg_should_passthrough(args: list[str]) -> bool:
     for a in args:
+        if a == "--":
+            break
         if a in RG_PASSTHROUGH_EXACT:
             return True
         if any(a.startswith(p) for p in RG_PASSTHROUGH_PREFIX):
             return True
-        if short_flag_bundle_contains(a, {"0", "c", "o", "A", "B", "C"}):
+        if short_flag_bundle_contains(a, {"0", "c", "o", "A", "B", "C", "N", "H", "I", "b", "M", "p", "q", "U"}):
             return True
     return False
 
 
 def rg_is_filelist_mode(args: list[str]) -> bool:
     for a in args:
+        if a == "--":
+            break
         if a in RG_FILELIST_EXACT:
             return True
-        if short_flag_bundle_contains(a, {"l", "L"}):
+        if short_flag_bundle_contains(a, {"l"}):
             return True
     return False
 
@@ -694,8 +748,6 @@ def render_rg_match_line(line_no: int | None, col_no: int | None, line_text: str
 def main_rg_filelist(args: list[str]) -> int:
     real = "rg"
     cp = run_capture([real, "--color=never", "-0", *args])
-    if cp.returncode == 2:
-        return replay_raw(cp)
 
     try:
         paths = parse_nul_paths(cp.stdout)
@@ -713,8 +765,6 @@ def main_rg_filelist(args: list[str]) -> int:
 def main_rg_json(args: list[str]) -> int:
     real = "rg"
     cp = run_capture([real, "--color=never", "--json", *args])
-    if cp.returncode == 2:
-        return replay_raw(cp)
 
     groups_by_path: dict[str, RgFileGroup] = {}
     total_match_lines = 0
@@ -907,6 +957,9 @@ def main_sed(args: list[str]) -> int:
 
             metas = collect_meta([spec.path])
             meta = metas.get(spec.path, FileMeta(kind="missing", bytes=None, lines=None))
+            if meta.kind != "file":
+                return passthrough([real, *args])
+
             b = str(meta.bytes) if meta.bytes is not None else "-"
             l = str(meta.lines) if meta.lines is not None else "-"
 

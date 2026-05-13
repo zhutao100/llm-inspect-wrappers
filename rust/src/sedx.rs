@@ -111,6 +111,10 @@ pub fn run(args: &[OsString]) -> ExitCode {
 
     let mut r: Box<dyn BufRead> = match &spec.input {
         SedInput::File(p) => {
+            if path_meta(p).kind != crate::common::PathKind::File {
+                return cmd_passthrough(tool, args);
+            }
+
             let f = match File::open(p) {
                 Ok(f) => f,
                 Err(_) => return cmd_passthrough(tool, args),

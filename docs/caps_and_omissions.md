@@ -7,7 +7,9 @@ Key idea:
 - **Totals remain informative** (`rows`, `files`, `match_lines`, etc.).
 - **Omitted output is not an error**; it is a deliberate truncation with explicit totals (and optional `shown_*` fields when truncation occurs).
 
-All wrappers are **best-effort**: if an invocation is unsupported or parsing fails, they **passthrough** to the canonical tool output (which may be unbounded and will not include wrapper `@meta` lines).
+All wrappers are **best-effort**:
+- If an invocation is unsupported or parsing fails, they **passthrough** to the canonical tool output (which may be unbounded and will not include wrapper `@meta` lines).
+- If the canonical tool reports diagnostics but still produces parseable rows or matches, wrappers keep the capped LLM-friendly stdout, forward stderr once, and return the canonical exit code.
 
 ---
 
@@ -46,6 +48,8 @@ Tuning:
 ## `fd-x`: file table cap + totals
 
 `fd-x` only intercepts “simple path list” shapes. If you use flags that change the output shape (e.g. `--exec`, `--format`, `--list-details`, `--print0`, etc.), it will passthrough.
+
+Path diagnostics do not automatically force passthrough. For example, if one requested search path is missing but `fd` still returns rows for another path, `fd-x` prints the file table, forwards the diagnostic on stderr, and returns `fd`'s exit code.
 
 ### What gets capped
 - Printed rows are capped to `LLM_X_MAX_FD_ROWS`.
@@ -86,6 +90,8 @@ Trailer line:
 ```
 If there are **0 rows** (no file paths), `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (typically `1` for “no matches”).
 
+Path diagnostics do not automatically force passthrough. If `rg` exits nonzero because one requested path is missing but still returns file paths, `rg-x` prints the file table, forwards the diagnostic on stderr, and returns `rg`'s exit code.
+
 ---
 
 ## `rg-x` match mode: file cap + per-file match-line cap
@@ -93,6 +99,10 @@ If there are **0 rows** (no file paths), `rg-x` prints **nothing** (no `@meta`) 
 If `rg-x` is not in passthrough mode and not in file-list mode, it runs `rg` in a structured mode and groups output by file.
 
 If there are **0 matches**, `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (`1`).
+
+Path diagnostics do not automatically force passthrough. If `rg` exits nonzero because one requested path is missing but still returns matches, `rg-x` prints grouped match output, forwards the diagnostic on stderr, and returns `rg`'s exit code.
+
+Flags that materially change match stdout shape are passed through instead of being adapted. Examples include context output, replacements, only-matching/count modes, headings/no-headings, no line numbers, filename suppression, stats, byte offsets, max-column previews, custom separators, pretty output, multiline mode, and JSON/vimgrep/null output.
 
 ### No-omit for small results
 If total match lines across all matching files is **≤ `LLM_X_MAX_RG_NO_OMIT_MATCH_LINES`**, `rg-x` prints:

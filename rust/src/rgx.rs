@@ -69,17 +69,82 @@ fn rg_strip_color_args(args: &[OsString]) -> Vec<OsString> {
 
 fn rg_should_passthrough(args: &[OsString]) -> bool {
     for a in args {
+        if a == OsStr::new("--") {
+            break;
+        }
+
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "--json" | "--passthru" | "--vimgrep" | "--null" | "-0" | "-c" | "--count"
-            | "--count-matches" | "-o" | "--only-matching" | "-r" | "--replace" | "-A" | "-B"
-            | "-C" | "--after-context" | "--before-context" | "--context" => return true,
+            "-h"
+            | "--help"
+            | "-V"
+            | "--version"
+            | "--type-list"
+            | "--generate"
+            | "--pcre2-version"
+            | "--json"
+            | "--passthru"
+            | "--vimgrep"
+            | "--null"
+            | "-0"
+            | "--null-data"
+            | "-q"
+            | "--quiet"
+            | "-c"
+            | "--count"
+            | "--count-matches"
+            | "-o"
+            | "--only-matching"
+            | "-r"
+            | "--replace"
+            | "-A"
+            | "-B"
+            | "-C"
+            | "--after-context"
+            | "--before-context"
+            | "--context"
+            | "--context-separator"
+            | "--field-context-separator"
+            | "--field-match-separator"
+            | "--heading"
+            | "--no-heading"
+            | "-N"
+            | "--no-line-number"
+            | "--no-column"
+            | "-H"
+            | "--with-filename"
+            | "-I"
+            | "--no-filename"
+            | "-b"
+            | "--byte-offset"
+            | "-M"
+            | "--max-columns"
+            | "--max-columns-preview"
+            | "--path-separator"
+            | "--hyperlink-format"
+            | "--hostname-bin"
+            | "-p"
+            | "--pretty"
+            | "--stats"
+            | "--include-zero"
+            | "--trim"
+            | "-U"
+            | "--multiline"
+            | "--multiline-dotall" => return true,
             _ => {}
         }
-        if s.starts_with("--replace=")
+        if s.starts_with("--generate=")
+            || s.starts_with("--replace=")
             || s.starts_with("--after-context=")
             || s.starts_with("--before-context=")
             || s.starts_with("--context=")
+            || s.starts_with("--context-separator=")
+            || s.starts_with("--field-context-separator=")
+            || s.starts_with("--field-match-separator=")
+            || s.starts_with("--max-columns=")
+            || s.starts_with("--path-separator=")
+            || s.starts_with("--hyperlink-format=")
+            || s.starts_with("--hostname-bin=")
         {
             return true;
         }
@@ -90,7 +155,15 @@ fn rg_should_passthrough(args: &[OsString]) -> bool {
                 || s.contains('o')
                 || s.contains('A')
                 || s.contains('B')
-                || s.contains('C'))
+                || s.contains('C')
+                || s.contains('N')
+                || s.contains('H')
+                || s.contains('I')
+                || s.contains('b')
+                || s.contains('M')
+                || s.contains('p')
+                || s.contains('q')
+                || s.contains('U'))
         {
             return true;
         }
@@ -100,14 +173,16 @@ fn rg_should_passthrough(args: &[OsString]) -> bool {
 
 fn rg_is_filelist_mode(args: &[OsString]) -> bool {
     for a in args {
+        if a == OsStr::new("--") {
+            break;
+        }
+
         let s = a.to_string_lossy();
         match s.as_ref() {
-            "--files" | "-l" | "--files-with-matches" | "-L" | "--files-without-match" => {
-                return true
-            }
+            "--files" | "-l" | "--files-with-matches" | "--files-without-match" => return true,
             _ => {}
         }
-        if s.starts_with('-') && !s.starts_with("--") && (s.contains('l') || s.contains('L')) {
+        if s.starts_with('-') && !s.starts_with("--") && s.contains('l') {
             return true;
         }
     }
@@ -243,9 +318,6 @@ pub fn run(args: &[OsString]) -> ExitCode {
             Err(_) => return cmd_passthrough(tool, &args),
         };
         let code = exit_code_from_status(out.status);
-        if out.status.code() == Some(2) {
-            return replay_raw(&out);
-        }
         let paths = split_nul_paths(&out.stdout);
         let rc = render_file_table("rg-x", Some("filelist"), paths, &cfg, code);
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
@@ -262,10 +334,6 @@ pub fn run(args: &[OsString]) -> ExitCode {
     };
 
     let code = exit_code_from_status(out.status);
-    if out.status.code() == Some(2) {
-        return replay_raw(&out);
-    }
-
     let mut groups: HashMap<PathBuf, Group> = HashMap::new();
     let mut total_match_lines: u64 = 0;
     let mut capped: bool = false;
