@@ -249,15 +249,15 @@ pub fn run(args: &[OsString]) -> ExitCode {
         }
     }
 
-    print!("@meta\ttool=fd-x\trows={}", total);
+    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+
+    eprint!("@meta\ttool=fd-x\trows={}", total);
     if shown < returned {
-        print!("\tshown_rows={}", shown);
+        eprint!("\tshown_rows={}", shown);
     }
     if let Some(max_results) = max_results {
-        print!("\tmax_results={}\treturned_rows={}", max_results, returned);
+        eprint!("\tmax_results={}\treturned_rows={}", max_results, returned);
     }
-    println!();
-
-    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+    eprintln!();
     exit_code_from_status(out.status)
 }

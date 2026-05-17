@@ -244,7 +244,7 @@ def render_file_table(
     *,
     total_override: int | None = None,
     meta_extra: list[tuple[str, str]] | None = None,
-) -> str:
+) -> tuple[str, str]:
     total_in = len(paths)
     shown = sorted(paths)[:max_rows]
     wrapper_truncated = len(shown) < total_in
@@ -271,8 +271,10 @@ def render_file_table(
         meta_fields.append(f"shown_rows={len(shown)}")
     if meta_extra:
         meta_fields.extend([f"{k}={v}" for k, v in meta_extra])
-    out.append("\t".join(meta_fields))
-    return "\n".join(out) + "\n"
+    stdout = "\n".join(out)
+    if stdout:
+        stdout += "\n"
+    return stdout, "\t".join(meta_fields) + "\n"
 
 
 def safe_preview_text(s: str) -> str:
@@ -581,9 +583,16 @@ def main_fd(args: list[str]) -> int:
                 ("returned_rows", str(returned)),
             ]
 
-        out = render_file_table("fd-x", paths, max_rows=CFG.max_fd_rows, total_override=total, meta_extra=meta_extra)
+        out, meta = render_file_table(
+            "fd-x",
+            paths,
+            max_rows=CFG.max_fd_rows,
+            total_override=total,
+            meta_extra=meta_extra,
+        )
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
+        sys.stderr.write(meta)
         return int(cp.returncode)
     except Exception:
         return replay_raw(cp)
@@ -754,9 +763,10 @@ def main_rg_filelist(args: list[str]) -> int:
         if not paths:
             sys.stderr.buffer.write(cp.stderr)
             return int(cp.returncode)
-        out = render_file_table("rg-x", paths, max_rows=CFG.max_fd_rows, mode="filelist")
+        out, meta = render_file_table("rg-x", paths, max_rows=CFG.max_fd_rows, mode="filelist")
         sys.stdout.write(out)
         sys.stderr.buffer.write(cp.stderr)
+        sys.stderr.write(meta)
         return int(cp.returncode)
     except Exception:
         return replay_raw(cp)
@@ -844,9 +854,9 @@ def main_rg_json(args: list[str]) -> int:
             *(["shown_files=" + str(len(shown_paths))] if len(shown_paths) < len(all_paths) else []),
             *(["shown_match_lines=" + str(printed_match_lines)] if printed_match_lines < total_match_lines_all else []),
         ]
-        out_lines.append("\t".join(meta_parts))
         sys.stdout.write("\n".join(out_lines) + "\n")
         sys.stderr.buffer.write(cp.stderr)
+        sys.stderr.write("\t".join(meta_parts) + "\n")
         return int(cp.returncode)
     except Exception:
         return replay_raw(cp)
@@ -982,7 +992,7 @@ def main_sed(args: list[str]) -> int:
                 f"range={spec.start}..{spec.end}",
                 *(["truncated_lines=" + str(truncated)] if truncated else []),
             ]
-            sys.stdout.write("\t".join(meta_parts) + "\n")
+            sys.stderr.write("\t".join(meta_parts) + "\n")
         else:
             is_tty = sys.stdin.isatty()
             for lineno, raw in enumerate(sys.stdin.buffer, start=1):
@@ -1015,7 +1025,7 @@ def main_sed(args: list[str]) -> int:
                 *(["reason=" + reason] if reason else []),
                 *(["truncated_lines=" + str(truncated)] if truncated else []),
             ]
-            sys.stdout.write("\t".join(meta_parts) + "\n")
+            sys.stderr.write("\t".join(meta_parts) + "\n")
         return 0
     except Exception:
         return passthrough([real, *args])

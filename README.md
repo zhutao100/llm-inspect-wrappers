@@ -19,15 +19,15 @@ Each implementation provides the same wrapper names:
 
 For deterministic wrapper output, wrapped `rg` invocations ignore `RIPGREP_CONFIG_PATH` (passthrough modes keep the original environment). Captured invocations inherit stdin like canonical `rg`: if stdin is piped, `rg-x PATTERN` searches stdin; to force filesystem search in piped/CI contexts, pass an explicit path (e.g. `rg-x PATTERN .`).
 
-If the underlying tool reports diagnostics while still producing parseable rows or matches, the wrappers keep the LLM-friendly output, forward stderr once, and return the canonical exit code. Flags that materially change `rg` output shape (context, replacement, headings, no line numbers, stats, etc.) are passed through.
+If the underlying tool reports diagnostics while still producing parseable rows or matches, the wrappers keep the LLM-friendly stdout, forward canonical stderr once, emit wrapper `@meta` summaries on stderr, and return the canonical exit code. Flags that materially change `rg` output shape (context, replacement, headings, no line numbers, stats, etc.) are passed through.
 
 ## Output format
 
-`fd-x` (and `rg-x` in filelist modes like `rg-x -l ...`) emit a file table followed by a single `@meta` line.
+`fd-x` (and `rg-x` in filelist modes like `rg-x -l ...`) emit a file table on stdout and a single `@meta` line on stderr.
 
 - Regular files: `path<TAB>bytes=N<TAB>lines=M`
 - Non-regular (dir/symlink/other/missing): `path` (no extra fields)
-- Meta line: `@meta<TAB>tool=...<TAB>rows=...<TAB>[shown_rows=...]` (plus `mode=...` when applicable)
+- Meta line on stderr: `@meta<TAB>tool=...<TAB>rows=...<TAB>[shown_rows=...]` (plus `mode=...` when applicable)
   - When present, `shown_rows` indicates wrapper truncation. Use `returned_rows` (when present) as the pre-wrapper row count; otherwise use `rows`.
 
 Help/version flags are passed through without wrapper post-processing (canonical tool output, original newlines, no `@meta`):
@@ -38,15 +38,15 @@ Examples:
 ```bash
 fd-x -tf
 # short.txt	bytes=11	lines=1
-# @meta	tool=fd-x	rows=1
+# stderr: @meta	tool=fd-x	rows=1
 
 fd-x -td
 # src/
 # tests/
-# @meta	tool=fd-x	rows=2
+# stderr: @meta	tool=fd-x	rows=2
 ```
 
-`sed-x` prints the selected range, then a single `@meta` line.
+`sed-x` prints the selected range on stdout, then emits a single `@meta` line on stderr. Keeping metadata off stdout preserves plain ranged-read output in command substitutions and pipelines unless long-line gating changes a selected line.
 
 - File input: `@meta<TAB>tool=sed-x<TAB>path=...<TAB>bytes=...<TAB>lines=...<TAB>range=a..b` (plus `truncated_lines=...` when gating occurs)
 - Stdin input: `@meta<TAB>tool=sed-x<TAB>source=stdin<TAB>range=a..b<TAB>bytes=...<TAB>lines=...<TAB>complete=0|1`
@@ -58,7 +58,7 @@ Stdin total scanning is bounded by:
 
 ## Caps & omissions
 
-Wrappers intentionally cap printed output (and report totals via `@meta`) to avoid flooding an LLM context window.
+Wrappers intentionally cap printed output (and report totals via stderr `@meta`) to avoid flooding an LLM context window.
 
 Key knobs:
 - `LLM_X_MAX_FD_ROWS` (file tables: `fd-x`, `rg-x -l`, etc.)

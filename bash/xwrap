@@ -309,7 +309,7 @@ fd_x() {
     local total_uncapped=0
     local fifo2 pid2 tmpdir2 rc2
 
-    exec 9>&2
+    exec 8>&2
     exec 2>/dev/null
     if ! run_to_fifo fd --color=never -0 "${argv_uncapped[@]}"; then
       rc2=2
@@ -324,8 +324,8 @@ fd_x() {
       rc2=$?
       rm -rf "$tmpdir2"
     fi
-    exec 2>&9
-    exec 9>&-
+    exec 2>&8
+    exec 8>&-
 
     if ((rc2 == 0)); then
       total="$total_uncapped"
@@ -339,14 +339,16 @@ fd_x() {
     total="$returned"
   fi
 
-  printf '@meta\ttool=fd-x\trows=%s' "$total"
-  if ((printed < returned)); then
-    printf '\tshown_rows=%s' "$printed"
-  fi
-  if ((max_results_set)); then
-    printf '\tmax_results=%s\treturned_rows=%s' "$max_results" "$returned"
-  fi
-  printf '\n'
+  {
+    printf '@meta\ttool=fd-x\trows=%s' "$total"
+    if ((printed < returned)); then
+      printf '\tshown_rows=%s' "$printed"
+    fi
+    if ((max_results_set)); then
+      printf '\tmax_results=%s\treturned_rows=%s' "$max_results" "$returned"
+    fi
+    printf '\n'
+  } >&2
   return "$rc"
 }
 
@@ -479,11 +481,13 @@ rg_x_filelist() {
     printf '%s\n' "${out_rows[@]}"
   fi
   if ((total > 0)); then
-    printf '@meta\ttool=rg-x\tmode=filelist\trows=%s' "$total"
-    if ((printed < total)); then
-      printf '\tshown_rows=%s' "$printed"
-    fi
-    printf '\n'
+    {
+      printf '@meta\ttool=rg-x\tmode=filelist\trows=%s' "$total"
+      if ((printed < total)); then
+        printf '\tshown_rows=%s' "$printed"
+      fi
+      printf '\n'
+    } >&2
   fi
   return "$rc"
 }
@@ -658,16 +662,18 @@ rg_x_match() {
     printf '%s\n' "${out_lines[@]}"
   fi
 
-  printf '@meta\ttool=rg-x\tmode=match\tfiles=%s\tmatch_lines=%s' \
-    "$files_seen" \
-    "$match_lines_total"
-  if ((files_printed < files_seen)); then
-    printf '\tshown_files=%s' "$files_printed"
-  fi
-  if ((match_lines_printed < match_lines_total)); then
-    printf '\tshown_match_lines=%s' "$match_lines_printed"
-  fi
-  printf '\n'
+  {
+    printf '@meta\ttool=rg-x\tmode=match\tfiles=%s\tmatch_lines=%s' \
+      "$files_seen" \
+      "$match_lines_total"
+    if ((files_printed < files_seen)); then
+      printf '\tshown_files=%s' "$files_printed"
+    fi
+    if ((match_lines_printed < match_lines_total)); then
+      printf '\tshown_match_lines=%s' "$match_lines_printed"
+    fi
+    printf '\n'
+  } >&2
 
   return "$rc"
 }
@@ -804,19 +810,21 @@ sed_x() {
       fi
     done
 
-    printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tbytes=%s\tlines=%s\tcomplete=%s' \
-      "$start" \
-      "$end" \
-      "$total_bytes" \
-      "$line_no" \
-      "$complete"
-    if [[ -n "$reason" ]]; then
-      printf '\treason=%s' "$reason"
-    fi
-    if ((truncated > 0)); then
-      printf '\ttruncated_lines=%s' "$truncated"
-    fi
-    printf '\n'
+    {
+      printf '@meta\ttool=sed-x\tsource=stdin\trange=%s..%s\tbytes=%s\tlines=%s\tcomplete=%s' \
+        "$start" \
+        "$end" \
+        "$total_bytes" \
+        "$line_no" \
+        "$complete"
+      if [[ -n "$reason" ]]; then
+        printf '\treason=%s' "$reason"
+      fi
+      if ((truncated > 0)); then
+        printf '\ttruncated_lines=%s' "$truncated"
+      fi
+      printf '\n'
+    } >&2
     return 0
   fi
 
@@ -842,8 +850,9 @@ sed_x() {
   local truncated=0
   local line_no="$start"
   local -a out_lines=()
+  local -a out_newlines=()
 
-  local fifo pid tmpdir
+  local fifo pid tmpdir line
   if ! run_to_fifo sed "$@"; then
     exec sed "$@"
   fi
@@ -851,7 +860,18 @@ sed_x() {
   pid="$RUN_PID"
   tmpdir="$RUN_TMPDIR"
 
-  while IFS= read -r line; do
+  while true; do
+    local rc add_nl
+    IFS= read -r line
+    rc=$?
+    if ((rc != 0)); then
+      [[ -n "$line" ]] || break
+    fi
+    add_nl=0
+    if ((rc == 0)); then
+      add_nl=1
+    fi
+
     local kind_line
     kind_line="$(classify_line_kind "$line")"
     if [[ "$kind_line" == "plain" ]]; then
@@ -860,6 +880,7 @@ sed_x() {
       truncated=$((truncated + 1))
       out_lines+=("$(truncated_marker "sed-x truncated line=${line_no}" "$line" "$kind_line")")
     fi
+    out_newlines+=("$add_nl")
     line_no=$((line_no + 1))
   done <"$fifo"
 
@@ -872,7 +893,14 @@ sed_x() {
   fi
 
   if ((${#out_lines[@]} > 0)); then
-    printf '%s\n' "${out_lines[@]}"
+    local i
+    for ((i = 0; i < ${#out_lines[@]}; i++)); do
+      if ((${out_newlines[$i]} == 1)); then
+        printf '%s\n' "${out_lines[$i]}"
+      else
+        printf '%s' "${out_lines[$i]}"
+      fi
+    done
   fi
 
   if [[ "$kind" == "file" ]]; then
@@ -883,14 +911,14 @@ sed_x() {
         "$lines" \
         "$start" \
         "$end" \
-        "$truncated"
+        "$truncated" >&2
     else
       printf '@meta\ttool=sed-x\tpath=%s\tbytes=%s\tlines=%s\trange=%s..%s\n' \
         "$(escape_field "$file")" \
         "$bytes" \
         "$lines" \
         "$start" \
-        "$end"
+        "$end" >&2
     fi
   else
     if ((truncated > 0)); then
@@ -901,7 +929,7 @@ sed_x() {
         "$lines" \
         "$start" \
         "$end" \
-        "$truncated"
+        "$truncated" >&2
     else
       printf '@meta\ttool=sed-x\tpath=%s\tkind=%s\tbytes=%s\tlines=%s\trange=%s..%s\n' \
         "$(escape_field "$file")" \
@@ -909,7 +937,7 @@ sed_x() {
         "$bytes" \
         "$lines" \
         "$start" \
-        "$end"
+        "$end" >&2
     fi
   fi
   return "$rc"

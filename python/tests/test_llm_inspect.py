@@ -62,7 +62,8 @@ class TestLlmInspectPython(unittest.TestCase):
             self.assertEqual(cp.returncode, 0, cp.stderr)
 
             lines = [ln for ln in cp.stdout.splitlines() if ln.strip()]
-            self.assertTrue(any(ln.startswith("@meta\ttool=fd-x\t") for ln in lines))
+            self.assertNotIn("@meta\ttool=fd-x", cp.stdout)
+            self.assertIn("@meta\ttool=fd-x", cp.stderr)
 
             rows = [ln for ln in lines if not ln.startswith("@meta\t")]
             self.assertGreaterEqual(len(rows), 2)
@@ -107,7 +108,8 @@ class TestLlmInspectPython(unittest.TestCase):
             short_match = next((ln for ln in lines if ln.startswith("1:") and "needle here" in ln), None)
             self.assertIsNotNone(short_match)
 
-            self.assertTrue(any(ln.startswith("@meta\ttool=rg-x\tmode=match\t") for ln in lines))
+            self.assertNotIn("@meta\ttool=rg-x", cp.stdout)
+            self.assertIn("@meta\ttool=rg-x\tmode=match\t", cp.stderr)
 
     @unittest.skipUnless(have_tools("rg"), "requires rg on PATH")
     def test_rg_x_no_match_emits_empty_stdout(self) -> None:
@@ -137,4 +139,5 @@ class TestLlmInspectPython(unittest.TestCase):
             self.assertEqual(cp.returncode, 0, cp.stderr)
 
             self.assertIn("sed-x truncated line=1", cp.stdout)
-            self.assertIn("@meta\ttool=sed-x\tpath=big.txt", cp.stdout)
+            self.assertNotIn("@meta\ttool=sed-x", cp.stdout)
+            self.assertIn("@meta\ttool=sed-x\tpath=big.txt", cp.stderr)

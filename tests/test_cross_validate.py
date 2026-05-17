@@ -27,7 +27,7 @@ def parse_kv_fields(fields: list[str]) -> dict[str, str]:
     return out
 
 
-def parse_file_table(stdout: str) -> tuple[dict[str, dict[str, str]], dict[str, str]]:
+def parse_file_table(stdout: str, meta_text: str = "") -> tuple[dict[str, dict[str, str]], dict[str, str]]:
     rows: dict[str, dict[str, str]] = {}
     meta: dict[str, str] = {}
 
@@ -41,6 +41,10 @@ def parse_file_table(stdout: str) -> tuple[dict[str, dict[str, str]], dict[str, 
         path = cols[0]
         rows[path] = parse_kv_fields(cols[1:])
 
+    for line in [ln for ln in meta_text.splitlines() if ln.strip()]:
+        if line.startswith("@meta\t"):
+            meta = parse_kv_fields(line.split("\t")[1:])
+
     return rows, meta
 
 
@@ -51,7 +55,10 @@ class RgMatch:
     body: str
 
 
-def parse_rg(stdout: str) -> tuple[dict[str, dict[str, str]], dict[str, list[RgMatch]], dict[str, str]]:
+def parse_rg(
+    stdout: str,
+    meta_text: str = "",
+) -> tuple[dict[str, dict[str, str]], dict[str, list[RgMatch]], dict[str, str]]:
     headers: dict[str, dict[str, str]] = {}
     matches: dict[str, list[RgMatch]] = {}
     meta: dict[str, str] = {}
@@ -77,6 +84,10 @@ def parse_rg(stdout: str) -> tuple[dict[str, dict[str, str]], dict[str, list[RgM
             matches[current_path].append(RgMatch(line=int(line_s), col=int(col_s), body=body))
         except ValueError:
             continue
+
+    for line in [ln for ln in meta_text.splitlines() if ln.strip()]:
+        if line.startswith("@meta\t"):
+            meta = parse_kv_fields(line.split("\t")[1:])
 
     return headers, matches, meta
 
@@ -146,7 +157,9 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("fd-x", "-tf", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                self.assertNotIn("@meta\ttool=fd-x", cp.stdout)
+                self.assertIn("@meta\ttool=fd-x", cp.stderr)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 results[impl.name] = rows
 
@@ -169,7 +182,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("fd-x", "--color=always", "short", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertNotIn("\x1b", cp.stdout)
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertIn("short.txt", rows)
 
@@ -183,7 +196,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("fd-x", "-td", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertGreaterEqual(len(rows), 2)
                 for fields in rows.values():
@@ -198,7 +211,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("fd-x", "-tf", "--max-results", "2", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertEqual(meta.get("max_results"), "2")
                 self.assertEqual(meta.get("returned_rows"), "2")
@@ -217,7 +230,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("fd-x", "-tf", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertEqual(meta.get("rows"), "5")
                 self.assertEqual(meta.get("shown_rows"), "2")
@@ -243,7 +256,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("fd-x", "-tf", ".", "ok", "missing", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("missing", cp.stderr)
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "fd-x")
                 self.assertEqual(meta.get("rows"), "1")
                 self.assertIn("ok/one.txt", rows)
@@ -312,7 +325,9 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                parsed[impl.name] = parse_rg(cp.stdout)
+                self.assertNotIn("@meta\ttool=rg-x", cp.stdout)
+                self.assertIn("@meta\ttool=rg-x", cp.stderr)
+                parsed[impl.name] = parse_rg(cp.stdout, cp.stderr)
 
             expected_paths = {"long.json", "short.txt"}
             for impl in self.impls:
@@ -367,7 +382,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertEqual(cp.stderr.count("No such file or directory"), 1)
                 self.assertNotIn('{"type":"match"', cp.stdout)
 
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertEqual(set(headers.keys()), {"protocol/src/protocol.rs"})
@@ -382,7 +397,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "needle", ".", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertIn("many.txt", headers)
@@ -402,7 +417,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertNotIn("hits", meta)
@@ -430,7 +445,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertEqual(meta.get("files"), "2")
@@ -456,7 +471,9 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                self.assertNotIn("@meta\ttool=rg-x", cp.stdout)
+                self.assertIn("@meta\ttool=rg-x", cp.stderr)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "filelist")
                 self.assertTrue(expected.issubset(rows.keys()))
@@ -466,7 +483,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "--color=always", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertNotIn("\x1b", cp.stdout)
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "filelist")
                 self.assertTrue(expected.issubset(rows.keys()))
@@ -477,7 +494,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 expected_lines = (root / rel).read_text(encoding="utf-8").count("\n")
                 for impl in self.impls:
                     cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
-                    rows, _ = parse_file_table(cp.stdout)
+                    rows, _ = parse_file_table(cp.stdout, cp.stderr)
                     row = rows[rel]
                     self.assertEqual(row.get("kind", "file"), "file")
                     self.assertEqual(int(row["bytes"]), expected_bytes)
@@ -493,7 +510,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "-l", "needle", ".", cwd=root, env=env)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "filelist")
                 self.assertEqual(meta.get("rows"), "5")
@@ -510,7 +527,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("rg-x", "-L", "needle", "link", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stdout:\n{cp.stdout}\nstderr:\n{cp.stderr}")
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertIn("link/one.txt", headers)
@@ -528,7 +545,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 self.assertIn("missing", cp.stderr)
                 self.assertEqual(cp.stderr.count("No such file or directory"), 1)
                 self.assertNotIn("\x00", cp.stdout)
-                rows, meta = parse_file_table(cp.stdout)
+                rows, meta = parse_file_table(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "filelist")
                 self.assertEqual(meta.get("rows"), "1")
@@ -543,7 +560,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "needle", cwd=root, stdin=stdin)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertEqual(meta.get("files"), "1")
@@ -565,7 +582,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("rg-x", "-f", "-", "a.txt", cwd=root, stdin="needle\n")
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
 
-                headers, matches, meta = parse_rg(cp.stdout)
+                headers, matches, meta = parse_rg(cp.stdout, cp.stderr)
                 self.assertEqual(meta.get("tool"), "rg-x")
                 self.assertEqual(meta.get("mode"), "match")
                 self.assertEqual(set(headers.keys()), {"a.txt"})
@@ -585,7 +602,55 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("sed-x", "-n", "1,1p", "long.json", cwd=root)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("sed-x truncated line=1", cp.stdout)
-                self.assertIn("@meta\ttool=sed-x\tpath=long.json", cp.stdout)
+                self.assertNotIn("@meta\ttool=sed-x", cp.stdout)
+                self.assertIn("@meta\ttool=sed-x\tpath=long.json", cp.stderr)
+
+    def test_sed_x_keeps_plain_stdout_canonical(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "plain.txt").write_text("a\nb\nc\n", encoding="utf-8")
+            (root / "no-newline.txt").write_text("last", encoding="utf-8")
+
+            file_cases = [
+                ("plain.txt", ("-n", "1,2p", "plain.txt")),
+                ("no-newline.txt", ("-n", "1,1p", "no-newline.txt")),
+            ]
+            for label, args in file_cases:
+                canonical = subprocess.run(
+                    ["sed", *args],
+                    cwd=str(root),
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                for impl in self.impls:
+                    with self.subTest(impl=impl.name, case=label):
+                        cp = impl.run("sed-x", *args, cwd=root)
+                        self.assertEqual(cp.returncode, canonical.returncode, impl.name)
+                        self.assertEqual(cp.stdout, canonical.stdout, impl.name)
+                        self.assertNotIn("@meta\ttool=sed-x", cp.stdout)
+                        self.assertIn("@meta\ttool=sed-x", cp.stderr)
+
+            stdin = "a\nb\nc\n"
+            canonical = subprocess.run(
+                ["sed", "-n", "1,2p"],
+                cwd=str(root),
+                input=stdin,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            for impl in self.impls:
+                with self.subTest(impl=impl.name, case="stdin"):
+                    cp = impl.run("sed-x", "-n", "1,2p", cwd=root, stdin=stdin)
+                    self.assertEqual(cp.returncode, canonical.returncode, impl.name)
+                    self.assertEqual(cp.stdout, canonical.stdout, impl.name)
+                    self.assertNotIn("@meta\ttool=sed-x", cp.stdout)
+                    self.assertIn("@meta\ttool=sed-x", cp.stderr)
 
     def test_sed_x_non_file_input_is_passthrough(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -616,7 +681,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
                 cp = impl.run("sed-x", "-n", "1,1p", cwd=root, stdin=long_line)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
                 self.assertIn("sed-x truncated line=1", cp.stdout)
-                meta = parse_meta_line(cp.stdout)
+                meta = parse_meta_line(cp.stderr)
                 self.assertEqual(meta.get("tool"), "sed-x")
                 self.assertEqual(meta.get("source"), "stdin")
                 self.assertEqual(meta.get("range"), "1..1")
@@ -632,7 +697,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("sed-x", "-n", "1,3p", cwd=root, stdin=stdin)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                meta = parse_meta_line(cp.stdout)
+                meta = parse_meta_line(cp.stderr)
                 self.assertEqual(meta.get("tool"), "sed-x")
                 self.assertEqual(meta.get("source"), "stdin")
                 self.assertEqual(meta.get("range"), "1..3")
@@ -648,7 +713,7 @@ class TestCrossValidateImplementations(unittest.TestCase):
             for impl in self.impls:
                 cp = impl.run("sed-x", "-n", "1,1p", cwd=root, env=env, stdin=stdin)
                 self.assertEqual(cp.returncode, 0, f"{impl.name} stderr:\n{cp.stderr}")
-                meta = parse_meta_line(cp.stdout)
+                meta = parse_meta_line(cp.stderr)
                 self.assertEqual(meta.get("tool"), "sed-x")
                 self.assertEqual(meta.get("source"), "stdin")
                 self.assertEqual(meta.get("range"), "1..1")

@@ -4,7 +4,7 @@
 
 Thin, best-effort wrappers around `fd`, `rg`, and ranged `sed` reads that emit LLM-efficient output.
 
-Key rule: **never fail** — for unsupported flags / parse errors / tool failures, passthrough to the canonical tool output; for parseable partial results with diagnostics, keep wrapped stdout, forward stderr once, and return the canonical exit code.
+Key rule: **never fail** — for unsupported flags / parse errors / tool failures, passthrough to the canonical tool output; for parseable partial results with diagnostics, keep wrapped stdout, forward canonical stderr once, emit wrapper `@meta` summaries on stderr, and return the canonical exit code.
 
 ## Layout
 
@@ -26,6 +26,7 @@ Key rule: **never fail** — for unsupported flags / parse errors / tool failure
   - make clear and optimal breaking changes to the metadata to improve LLM interpreting efficiency, no backwards compatibility, no effort to preserve old metadata shapes.
   - update the test expectations accordingly.
 - Output formats must stay consistent across implementations; `tests/` is the living spec.
+- Wrapper `@meta` summary lines belong on stderr so they do not become data in stdout pipelines or command substitutions.
 - Bash must remain compatible with macOS `/bin/bash` 3.2 (no Bash 4+ features like associative arrays, no `lastpipe`).
 - Preserve canonical semantics: if an `fd`/`rg` flag changes the output shape (context, replacements, custom formats, etc.), passthrough.
 - Determinism: wrapped `rg` calls ignore `RIPGREP_CONFIG_PATH` (passthrough keeps the original environment).

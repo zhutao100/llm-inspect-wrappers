@@ -233,14 +233,14 @@ fn render_file_table(
     }
 
     if let Some(mode) = mode {
-        print!("@meta\ttool={}\tmode={}\trows={}", tool, mode, total);
+        eprint!("@meta\ttool={}\tmode={}\trows={}", tool, mode, total);
     } else {
-        print!("@meta\ttool={}\trows={}", tool, total);
+        eprint!("@meta\ttool={}\trows={}", tool, total);
     }
     if shown < total {
-        print!("\tshown_rows={}", shown);
+        eprint!("\tshown_rows={}", shown);
     }
-    println!();
+    eprintln!();
 
     status
 }
@@ -319,8 +319,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
         };
         let code = exit_code_from_status(out.status);
         let paths = split_nul_paths(&out.stdout);
-        let rc = render_file_table("rg-x", Some("filelist"), paths, &cfg, code);
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
+        let rc = render_file_table("rg-x", Some("filelist"), paths, &cfg, code);
         return rc;
     }
 
@@ -471,18 +471,18 @@ pub fn run(args: &[OsString]) -> ExitCode {
         printed_match_lines += g.shown_lines.len() as u64;
     }
 
-    print!(
+    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+
+    eprint!(
         "@meta\ttool=rg-x\tmode=match\tfiles={}\tmatch_lines={}",
         total_files, total_match_lines_all
     );
     if printed_files < total_files {
-        print!("\tshown_files={}", printed_files);
+        eprint!("\tshown_files={}", printed_files);
     }
     if printed_match_lines < total_match_lines_all {
-        print!("\tshown_match_lines={}", printed_match_lines);
+        eprint!("\tshown_match_lines={}", printed_match_lines);
     }
-    println!();
-
-    eprint!("{}", String::from_utf8_lossy(&out.stderr));
+    eprintln!();
     code
 }

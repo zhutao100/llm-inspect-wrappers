@@ -1,6 +1,6 @@
 # Caps, omissions, and long-line gating
 
-These wrappers intentionally **cap what they print** to avoid flooding an LLM context window, while still reporting **totals** via a trailing `@meta` line.
+These wrappers intentionally **cap what they print** to avoid flooding an LLM context window, while still reporting **totals** via a trailing `@meta` line on stderr.
 
 Key idea:
 - **Printed output is bounded.**
@@ -9,7 +9,7 @@ Key idea:
 
 All wrappers are **best-effort**:
 - If an invocation is unsupported or parsing fails, they **passthrough** to the canonical tool output (which may be unbounded and will not include wrapper `@meta` lines).
-- If the canonical tool reports diagnostics but still produces parseable rows or matches, wrappers keep the capped LLM-friendly stdout, forward stderr once, and return the canonical exit code.
+- If the canonical tool reports diagnostics but still produces parseable rows or matches, wrappers keep the capped LLM-friendly stdout, forward canonical stderr once, emit wrapper `@meta` summaries on stderr, and return the canonical exit code.
 
 ---
 
@@ -53,10 +53,10 @@ Path diagnostics do not automatically force passthrough. For example, if one req
 
 ### What gets capped
 - Printed rows are capped to `LLM_X_MAX_FD_ROWS`.
-- Rows beyond that are **omitted** and only counted in `@meta`.
+- Rows beyond that are **omitted** and only counted in the stderr `@meta`.
 
 ### Meta meaning
-Trailer line:
+Stderr trailer line:
 ```
 @meta	tool=fd-x	rows=T	[ shown_rows=P ]	[ max_results=N	returned_rows=R ]
 ```
@@ -84,11 +84,11 @@ When `rg-x` detects a file-list mode (e.g. `-l`, `--files-with-matches`, `--file
 - Printed rows are capped to `LLM_X_MAX_FD_ROWS` (same as `fd-x`), even though the tool is `rg-x`.
 
 ### Meta meaning
-Trailer line:
+Stderr trailer line:
 ```
 @meta	tool=rg-x	mode=filelist	rows=T	[ shown_rows=P ]
 ```
-If there are **0 rows** (no file paths), `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (typically `1` for “no matches”).
+If there are **0 rows** (no file paths), `rg-x` prints no stdout, emits no `@meta`, and returns the canonical `rg` exit code (typically `1` for “no matches”).
 
 Path diagnostics do not automatically force passthrough. If `rg` exits nonzero because one requested path is missing but still returns file paths, `rg-x` prints the file table, forwards the diagnostic on stderr, and returns `rg`'s exit code.
 
@@ -98,7 +98,7 @@ Path diagnostics do not automatically force passthrough. If `rg` exits nonzero b
 
 If `rg-x` is not in passthrough mode and not in file-list mode, it runs `rg` in a structured mode and groups output by file.
 
-If there are **0 matches**, `rg-x` prints **nothing** (no `@meta`) and returns the canonical `rg` exit code (`1`).
+If there are **0 matches**, `rg-x` prints no stdout, emits no `@meta`, and returns the canonical `rg` exit code (`1`).
 
 Path diagnostics do not automatically force passthrough. If `rg` exits nonzero because one requested path is missing but still returns matches, `rg-x` prints grouped match output, forwards the diagnostic on stderr, and returns `rg`'s exit code.
 
@@ -136,7 +136,7 @@ match_lines=M	shown=S
   - Omitted match lines are derivable as `match_lines - shown`.
 
 ### Trailer meta fields
-All match-mode output ends with:
+All match-mode output emits this stderr trailer:
 ```
 @meta	tool=rg-x	mode=match	files=F	match_lines=ML	[ shown_files=PF ]	[ shown_match_lines=PML ]
 ```
@@ -163,13 +163,13 @@ sed -n 'a,bp' [file|-]
 Other `sed` invocations passthrough.
 
 ### File input
-Prints the selected range, then:
+Prints the selected range on stdout, then emits on stderr:
 ```
 @meta	tool=sed-x	path=...	bytes=...	lines=...	range=a..b	[ truncated_lines=T ]
 ```
 
 ### Stdin input
-Prints the selected range, then:
+Prints the selected range on stdout, then emits on stderr:
 ```
 @meta	tool=sed-x	source=stdin	range=a..b	bytes=...	lines=...	complete=0|1	[ reason=cap|tty ]	[ truncated_lines=T ]
 ```

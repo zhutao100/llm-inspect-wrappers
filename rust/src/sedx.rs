@@ -191,6 +191,8 @@ pub fn run(args: &[OsString]) -> ExitCode {
         }
     }
 
+    let _ = out.flush();
+
     match &spec.input {
         SedInput::File(p) => {
             let meta = path_meta(p);
@@ -206,7 +208,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
             let path_s = strip_dot_slash(&p.to_string_lossy()).to_string();
             if truncated > 0 {
                 if meta.kind == crate::common::PathKind::File {
-                    println!(
+                    eprintln!(
                         "@meta\ttool=sed-x\tpath={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
                         escape_field(&path_s),
                         bytes,
@@ -216,7 +218,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
                         truncated
                     );
                 } else {
-                    println!(
+                    eprintln!(
                         "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}\ttruncated_lines={}",
                         escape_field(&path_s),
                         meta.kind.as_str(),
@@ -228,7 +230,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
                     );
                 }
             } else if meta.kind == crate::common::PathKind::File {
-                println!(
+                eprintln!(
                     "@meta\ttool=sed-x\tpath={}\tbytes={}\tlines={}\trange={}..{}",
                     escape_field(&path_s),
                     bytes,
@@ -237,7 +239,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
                     spec.end
                 );
             } else {
-                println!(
+                eprintln!(
                     "@meta\ttool=sed-x\tpath={}\tkind={}\tbytes={}\tlines={}\trange={}..{}",
                     escape_field(&path_s),
                     meta.kind.as_str(),
@@ -252,23 +254,23 @@ pub fn run(args: &[OsString]) -> ExitCode {
             let complete = if stdin_complete { 1 } else { 0 };
             if truncated > 0 {
                 if let Some(reason) = stdin_reason {
-                    println!(
+                    eprintln!(
                         "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\treason={}\ttruncated_lines={}",
                         spec.start, spec.end, stdin_bytes, lineno, complete, reason, truncated
                     );
                 } else {
-                    println!(
+                    eprintln!(
                         "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\ttruncated_lines={}",
                         spec.start, spec.end, stdin_bytes, lineno, complete, truncated
                     );
                 }
             } else if let Some(reason) = stdin_reason {
-                println!(
+                eprintln!(
                     "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}\treason={}",
                     spec.start, spec.end, stdin_bytes, lineno, complete, reason
                 );
             } else {
-                println!(
+                eprintln!(
                     "@meta\ttool=sed-x\tsource=stdin\trange={}..{}\tbytes={}\tlines={}\tcomplete={}",
                     spec.start, spec.end, stdin_bytes, lineno, complete
                 );
